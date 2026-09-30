@@ -12,6 +12,7 @@ class RegistrarClienteRequest extends FormRequest
         return true; // registro publico
     }
 
+
     public function rules(): array
     {
         return [
@@ -22,4 +23,24 @@ class RegistrarClienteRequest extends FormRequest
             'telefono' => ['nullable', 'string', 'max:15'],
         ];
     }
+
+    //mensajes en español para errores de crear un usuario
+
+    public function messages(): array
+    {
+        return [
+            'nombre.required'    => 'El nombre es obligatorio.',
+            'apellido.required'  => 'El apellido es obligatorio.',
+            'correo.required'    => 'El correo es obligatorio.',
+            'correo.email'       => 'Escribe un correo válido.',
+            'correo.unique'      => 'Este correo ya está registrado.',
+            'password.required'  => 'La contraseña es obligatoria.',
+            'password.confirmed' => 'Las contraseñas no coinciden.',
+            'password.min'       => 'La contraseña debe tener al menos 8 caracteres.',
+            'password.letters'   => 'La contraseña debe incluir al menos una letra.',
+            'password.numbers'   => 'La contraseña debe incluir al menos un número.',
+        ];
+    }
+
 }
+
