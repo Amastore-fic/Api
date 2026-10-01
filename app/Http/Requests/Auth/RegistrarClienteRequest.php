@@ -12,6 +12,17 @@ class RegistrarClienteRequest extends FormRequest
         return true; // registro publico
     }
 
+    //preparacion de correo para validacion
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->filled('correo')) {
+            $this->merge([
+                'correo' => strtolower(trim($this->correo)),
+            ]);
+        }
+    }
+
 
     public function rules(): array
     {
