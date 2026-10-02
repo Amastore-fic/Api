@@ -8,12 +8,10 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegistrarClienteRequest;
 use App\Http\Requests\Auth\RegistrarVendedorRequest;
 use App\Models\Usuario;
-use App\Models\Vendedor;
+use App\Services\RegistroVendedorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -32,26 +30,9 @@ class AuthController extends Controller
         ], 201);
     }
 
-    public function registroVendedor(RegistrarVendedorRequest $request): JsonResponse
+    public function registroVendedor(RegistrarVendedorRequest $request, RegistroVendedorService $registro): JsonResponse
     {
-        $usuario = DB::transaction(function () use ($request) {
-            $usuario = Usuario::create([
-                ...$request->safe()->only(['nombre', 'apellido', 'telefono']),
-                'correo' => strtolower($request->correo),
-                'password' => $request->password,
-                'rol' => RolUsuario::Vendedor,
-            ]);
-
-            Vendedor::create([
-                'id_usuario' => $usuario->id,
-                'nombre_comercial' => $request->nombre_comercial,
-                'codigo_vendedor' => 'VND-'.strtoupper(Str::random(8)),
-                'sucursal' => $request->sucursal,
-                'descripcion' => $request->descripcion,
-            ]);
-
-            return $usuario->load('vendedor');
-        });
+        $usuario = $registro->registrar($request->validated());
 
         return response()->json([
             'message' => 'Cuenta de vendedor creada.',
