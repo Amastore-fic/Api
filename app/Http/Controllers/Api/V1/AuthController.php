@@ -15,10 +15,12 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class AuthController extends Controller
 {
@@ -130,66 +132,52 @@ class AuthController extends Controller
     {
         $request->validate(['correo' => 'required|email']);
 
-        $correoBuscado = strtolower($request->correo);
-        
-        \Illuminate\Support\Facades\Log::info("1. Buscando correo para password reset: " . $correoBuscado);
-
-        $usuario = Usuario::where('correo', $correoBuscado)->first();
-        
-        $urlEnlace = null;
-
-        if ($usuario) {
-            \Illuminate\Support\Facades\Log::info("2. ¡Usuario encontrado! ID: " . $usuario->id);
-            
-            try {
-                $token = Password::broker()->createToken($usuario);
-                \Illuminate\Support\Facades\Log::info("3. Token generado con éxito: " . $token);
-                
-                $urlEnlace = "http://localhost:5173/restablecer-password?token={$token}&correo=" . urlencode($usuario->correo);
-                \Illuminate\Support\Facades\Log::info("ENLACE DE RECUPERACIÓN DIRECTO: " . $urlEnlace);
-
-                $usuario->sendPasswordResetNotification($token);
-                \Illuminate\Support\Facades\Log::info("4. Notificación disparada correctamente.");
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error("ERROR CRÍTICO AL ENVIAR NOTIFICACIÓN: " . $e->getMessage());
-            }
-
-        } else {
-            \Illuminate\Support\Facades\Log::warning("No se encontró ningún usuario con el correo: " . $correoBuscado);
+        // Envia el correo con el enlace si la cuenta existe. El broker de Laravel guarda
+        // el token cifrado y no deja pedir otro para la misma cuenta antes de 60 s.
+        try {
+            Password::broker()->sendResetLink(['email' => Str::lower(trim($request->correo))]);
+        } catch (\Throwable $e) {
+            // Nunca se escriben en el log el token ni el enlace
+            Log::error('No se pudo enviar el correo de recuperación de contraseña.', ['error' => $e->getMessage()]);
         }
 
+        // Misma respuesta exista o no la cuenta: asi no se revela que correos estan registrados.
+        // El enlace solo viaja por correo; jamas en esta respuesta.
         return response()->json([
             'message' => 'Si el correo está registrado, recibirás las instrucciones.',
-            'debug_url' => $urlEnlace,
-        ], 200);
+        ]);
     }
     
-    public function reset(Request $request)
+    public function reset(Request $request): JsonResponse
     {
         $request->validate([
-            'token' => 'required',
+            'token' => 'required|string',
             'correo' => 'required|email',
-            'password' => 'required|min:8|confirmed', 
+            // Mismas reglas que al registrarse
+            'password' => ['required', 'string', 'confirmed', PasswordRule::min(8)->letters()->numbers()],
         ]);
 
         $response = Password::broker()->reset(
             [
-                'email' => $request->correo,
+                'email' => Str::lower(trim($request->correo)),
                 'password' => $request->password,
                 'password_confirmation' => $request->password_confirmation,
                 'token' => $request->token,
             ],
             function ($usuario, $password) {
-                $usuario->password = Hash::make($password);
+                $usuario->password = $password; // el cast 'hashed' aplica bcrypt
                 $usuario->setRememberToken(Str::random(60));
                 $usuario->save();
+
+                // Cierra todas las sesiones abiertas: si alguien mas tenia acceso, lo pierde
+                $usuario->tokens()->delete();
 
                 event(new PasswordReset($usuario));
             }
         );
 
-        if ($response == Password::PASSWORD_RESET) {
-            return response()->json(['message' => 'Contraseña restablecida con éxito.'], 200);
+        if ($response === Password::PASSWORD_RESET) {
+            return response()->json(['message' => 'Contraseña restablecida con éxito.']);
         }
 
         return response()->json(['message' => 'El enlace de recuperación ha expirado o es inválido.'], 422);
