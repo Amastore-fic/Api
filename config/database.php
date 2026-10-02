@@ -99,6 +99,15 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // Segunda base (NoSQL) para datos que no necesitan relaciones, como la bitacora.
+        // PostgreSQL sigue siendo la base principal. En Docker, MONGODB_URI la arma
+        // docker-compose.yml con el usuario de la app.
+        'mongodb' => [
+            'driver' => 'mongodb',
+            'dsn' => env('MONGODB_URI', 'mongodb://127.0.0.1:27017'),
+            'database' => env('MONGODB_DATABASE', 'comprasegura'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

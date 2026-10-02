@@ -1,4 +1,4 @@
-# Etapa base: PHP + extensiones que Laravel necesita para PostgreSQL
+# Etapa base: PHP + extensiones que Laravel necesita para PostgreSQL y MongoDB
 FROM php:8.4-fpm-alpine AS base
 
 RUN apk add --no-cache \
@@ -6,12 +6,17 @@ RUN apk add --no-cache \
     libzip-dev \
     icu-dev \
     oniguruma-dev \
+    openssl-dev \
     linux-headers \
     git \
     unzip \
     $PHPIZE_DEPS
 
 RUN docker-php-ext-install pdo pdo_pgsql pgsql zip intl mbstring bcmath
+
+# Extension de MongoDB (la usa el paquete mongodb/laravel-mongodb)
+RUN pecl install mongodb \
+    && docker-php-ext-enable mongodb
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
