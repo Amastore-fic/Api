@@ -41,8 +41,9 @@ class AppServiceProvider extends ServiceProvider
             };
         });
         ResetPassword::createUrlUsing(function ($usuario, string $token) {
-            $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
-            
+            $frontendUrl = rtrim(config('app.frontend_url'), '/');
+
+
             return "{$frontendUrl}/restablecer-password?token={$token}&correo=" . urlencode($usuario->correo);
         });
     }
