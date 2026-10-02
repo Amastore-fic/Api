@@ -34,9 +34,26 @@ class AuthController extends Controller
         ], 201);
     }
 
-    public function registroVendedor(RegistrarVendedorRequest $request, RegistroVendedorService $registro): JsonResponse
+    public function registroVendedor(RegistrarVendedorRequest $request): JsonResponse
     {
-        $usuario = $registro->registrar($request->validated());
+        $usuario = DB::transaction(function () use ($request) {
+            $usuario = Usuario::create([
+                ...$request->safe()->only(['nombre', 'apellido', 'telefono']),
+                'correo' => strtolower($request->correo),
+                'password' => $request->password,
+                'rol' => RolUsuario::Vendedor,
+            ]);
+
+            Vendedor::create([
+                'id_usuario' => $usuario->id,
+                'nombre_comercial' => $request->nombre_comercial,
+                'codigo_vendedor' => 'VND-'.strtoupper(Str::random(8)),
+                'sucursal' => $request->sucursal,
+                'descripcion' => $request->descripcion,
+            ]);
+
+            return $usuario->load('vendedor');
+        });
 
         return response()->json([
             'message' => 'Cuenta de vendedor creada.',
@@ -100,7 +117,7 @@ class AuthController extends Controller
                 \Illuminate\Support\Facades\Log::info("3. Token generado con éxito: " . $token);
                 
                 $urlEnlace = "http://localhost:5173/restablecer-password?token={$token}&correo=" . urlencode($usuario->correo);
-                \Illuminate\Support\Facades\Log::info("👉 ENLACE DE RECUPERACIÓN DIRECTO: " . $urlEnlace);
+                \Illuminate\Support\Facades\Log::info("ENLACE DE RECUPERACIÓN DIRECTO: " . $urlEnlace);
 
                 $usuario->sendPasswordResetNotification($token);
                 \Illuminate\Support\Facades\Log::info("4. Notificación disparada correctamente.");
@@ -126,10 +143,9 @@ class AuthController extends Controller
             'password' => 'required|min:8|confirmed', 
         ]);
 
-      
         $response = Password::broker()->reset(
             [
-                'email' => $request->correo, /
+                'email' => $request->correo,
                 'password' => $request->password,
                 'password_confirmation' => $request->password_confirmation,
                 'token' => $request->token,
@@ -149,5 +165,4 @@ class AuthController extends Controller
 
         return response()->json(['message' => __($response)], 422);
     }
-
 }
