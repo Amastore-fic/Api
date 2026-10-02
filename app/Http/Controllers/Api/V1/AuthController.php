@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 class AuthController extends Controller
@@ -63,15 +64,34 @@ class AuthController extends Controller
 
     public function login(LoginRequest $request): JsonResponse
     {
+        
+        $throttleKey = Str::lower($request->correo) . '|' . $request->ip();
+
+        
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+            return response()->json([
+                'message' => "Demasiados intentos fallidos. Inténtalo de nuevo en {$seconds} segundos."
+            ], 429); // 
+        }
+
         $usuario = Usuario::where('correo', strtolower($request->correo))->first();
 
+       
         if (! $usuario || ! Hash::check($request->password, $usuario->password)) {
+            
+            RateLimiter::hit($throttleKey, 15);
+
             return response()->json(['message' => 'Credenciales incorrectas.'], 401);
         }
 
+        
         if (! $usuario->activo) {
             return response()->json(['message' => 'La cuenta esta bloqueada.'], 403);
         }
+
+        
+        RateLimiter::clear($throttleKey);
 
         $token = $usuario->createToken(
             $request->input('dispositivo', 'web'),
@@ -160,9 +180,9 @@ class AuthController extends Controller
         );
 
         if ($response == Password::PASSWORD_RESET) {
-            return response()->json(['message' => __($response)], 200);
+            return response()->json(['message' => 'Contraseña restablecida con éxito.'], 200);
         }
 
-        return response()->json(['message' => __($response)], 422);
+        return response()->json(['message' => 'El enlace de recuperación ha expirado o es inválido.'], 422);
     }
 }
