@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\EventoBitacora;
 use App\Enums\RolUsuario;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
@@ -9,6 +10,7 @@ use App\Http\Requests\Auth\RegistrarClienteRequest;
 use App\Http\Requests\Auth\RegistrarVendedorRequest;
 use App\Models\Usuario;
 use App\Models\Vendedor;
+use App\Services\BitacoraService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -62,7 +64,7 @@ class AuthController extends Controller
         ], 201);
     }
 
-    public function login(LoginRequest $request): JsonResponse
+    public function login(LoginRequest $request, BitacoraService $bitacora): JsonResponse
     {
         
         $throttleKey = Str::lower($request->correo) . '|' . $request->ip();
@@ -70,6 +72,7 @@ class AuthController extends Controller
         
         if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
             $seconds = RateLimiter::availableIn($throttleKey);
+            $bitacora->registrar(EventoBitacora::LoginBloqueado, $request, detalles: ['segundos_restantes' => $seconds]);
             return response()->json([
                 'message' => "Demasiados intentos fallidos. Inténtalo de nuevo en {$seconds} segundos."
             ], 429); // 
@@ -81,12 +84,15 @@ class AuthController extends Controller
         if (! $usuario || ! Hash::check($request->password, $usuario->password)) {
             
             RateLimiter::hit($throttleKey, 15);
+            $bitacora->registrar(EventoBitacora::LoginFallido, $request, $usuario);
 
             return response()->json(['message' => 'Credenciales incorrectas.'], 401);
         }
 
         
         if (! $usuario->activo) {
+            $bitacora->registrar(EventoBitacora::LoginCuentaInactiva, $request, $usuario);
+
             return response()->json(['message' => 'La cuenta esta bloqueada.'], 403);
         }
 
@@ -98,6 +104,8 @@ class AuthController extends Controller
             [$usuario->rol->value],
         );
 
+        $bitacora->registrar(EventoBitacora::LoginExitoso, $request, $usuario);
+
         return response()->json([
             'token' => $token->plainTextToken,
             'tipo' => 'Bearer',
@@ -105,9 +113,10 @@ class AuthController extends Controller
         ]);
     }
 
-    public function logout(Request $request): JsonResponse
+    public function logout(Request $request, BitacoraService $bitacora): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
+        $bitacora->registrar(EventoBitacora::Logout, $request, $request->user());
 
         return response()->json(['message' => 'Sesion cerrada.']);
     }

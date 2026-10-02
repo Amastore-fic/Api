@@ -106,6 +106,13 @@ return [
             'driver' => 'mongodb',
             'dsn' => env('MONGODB_URI', 'mongodb://127.0.0.1:27017'),
             'database' => env('MONGODB_DATABASE', 'comprasegura'),
+            'options' => [
+                // Si MongoDB no responde, rendirse en 2 s (por defecto son 10-30 s).
+                // Asi una caida de MongoDB no deja colgado el inicio de sesion.
+                // PHP intenta conectar una sola vez, asi que manda connectTimeoutMS.
+                'connectTimeoutMS' => (int) env('MONGODB_TIMEOUT_MS', 2000),
+                'serverSelectionTimeoutMS' => (int) env('MONGODB_TIMEOUT_MS', 2000),
+            ],
         ],
 
         'sqlsrv' => [

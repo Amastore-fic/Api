@@ -22,6 +22,12 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Migraciones de MongoDB (coleccion de bitacora). Corren con el "php artisan migrate"
+        // de siempre, pero no en las pruebas, que no deben depender de MongoDB.
+        if (! $this->app->environment('testing')) {
+            $this->loadMigrationsFrom(database_path('migrations/mongodb'));
+        }
+
         Auth::provider('usuarios-provider', function ($app, array $config) {
             return new class($app['hash'], $config['model']) extends EloquentUserProvider {
                 public function retrieveByCredentials(array $credentials)
