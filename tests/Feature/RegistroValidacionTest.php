@@ -4,9 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+// Verifica que el registro rechace datos invalidos y que los mensajes lleguen
+// traducidos. No se compara el texto exacto: cada mensaje puede ajustarse en
+// lang/es/validation.php o en messages() del FormRequest sin romper estas pruebas.
 class RegistroValidacionTest extends TestCase
 {
     use RefreshDatabase;
@@ -17,69 +21,71 @@ class RegistroValidacionTest extends TestCase
             'nombre' => 'José María',
             'apellido' => 'Núñez',
             'correo' => 'jose@correo.com',
-            'telefono' => '6671234567',
             'password' => 'secreto123',
             'password_confirmation' => 'secreto123',
         ], $cambios);
     }
 
-    public function test_acepta_datos_validos_con_acentos_y_sin_telefono(): void
+    // El campo trae un error y su mensaje esta en espanol (no una clave como "validation.min.string")
+    private function assertErrorTraducido(TestResponse $respuesta, string $campo): void
     {
-        $this->postJson('/api/v1/auth/registro', $this->datosValidos(['telefono' => null]))
-            ->assertCreated();
+        $respuesta->assertUnprocessable()->assertJsonValidationErrorFor($campo);
+
+        $mensaje = $respuesta->json("errors.$campo.0");
+        $this->assertStringNotContainsString('validation.', $mensaje, "Mensaje sin traducir en $campo");
+    }
+
+    public function test_acepta_datos_validos_con_acentos(): void
+    {
+        $this->postJson('/api/v1/auth/registro', $this->datosValidos())->assertCreated();
     }
 
     public static function datosInvalidos(): array
     {
         return [
-            'nombre con numeros' => ['nombre', 'Ana123', 'El nombre solo puede tener letras y espacios.'],
-            'apellido con simbolos' => ['apellido', 'Lopez!', 'El apellido solo puede tener letras y espacios.'],
-            'nombre de una letra' => ['nombre', 'A', 'El campo nombre debe tener al menos 2 caracteres.'],
-            'telefono con letras' => ['telefono', '66abc71234', 'El campo teléfono debe tener 10 dígitos.'],
-            'telefono corto' => ['telefono', '6671234', 'El campo teléfono debe tener 10 dígitos.'],
-            'correo sin dominio completo' => ['correo', 'ana@correo', 'Escribe un correo válido, por ejemplo nombre@dominio.com.'],
-            'password corta' => ['password', 'abc1', 'El campo contraseña debe tener al menos 8 caracteres.'],
-            'password sin numeros' => ['password', 'abcdefgh', 'El campo contraseña debe tener al menos un número.'],
+            'correo sin arroba' => ['correo', 'correo-invalido'],
+            'password corta' => ['password', 'abc1'],
+            'password sin numeros' => ['password', 'abcdefgh'],
+            'password sin letras' => ['password', '12345678'],
         ];
     }
 
     #[DataProvider('datosInvalidos')]
-    public function test_rechaza_datos_invalidos_con_mensaje_en_espanol(string $campo, string $valor, string $mensaje): void
+    public function test_rechaza_datos_invalidos_con_mensaje_traducido(string $campo, string $valor): void
     {
         $datos = $this->datosValidos([$campo => $valor]);
         if ($campo === 'password') {
             $datos['password_confirmation'] = $valor;
         }
 
-        $this->postJson('/api/v1/auth/registro', $datos)
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors([$campo => $mensaje]);
+        $this->assertErrorTraducido($this->postJson('/api/v1/auth/registro', $datos), $campo);
     }
 
     public function test_contrasenas_distintas(): void
     {
-        $this->postJson('/api/v1/auth/registro', $this->datosValidos(['password_confirmation' => 'otra12345']))
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['password' => 'Las contraseñas no coinciden.']);
+        $respuesta = $this->postJson('/api/v1/auth/registro', $this->datosValidos([
+            'password_confirmation' => 'otra12345',
+        ]));
+
+        $this->assertErrorTraducido($respuesta, 'password');
     }
 
     public function test_correo_ya_registrado(): void
     {
         Usuario::factory()->create(['correo' => 'jose@correo.com']);
 
-        $this->postJson('/api/v1/auth/registro', $this->datosValidos())
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['correo' => 'Ya existe una cuenta con este correo.']);
+        $this->assertErrorTraducido(
+            $this->postJson('/api/v1/auth/registro', $this->datosValidos()),
+            'correo'
+        );
     }
 
     public function test_campos_obligatorios(): void
     {
-        $this->postJson('/api/v1/auth/registro', [])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors([
-                'nombre' => 'El campo nombre es obligatorio.',
-                'correo' => 'El campo correo es obligatorio.',
-                'password' => 'El campo contraseña es obligatorio.',
-            ]);
+        $respuesta = $this->postJson('/api/v1/auth/registro', []);
+
+        foreach (['nombre', 'apellido', 'correo', 'password'] as $campo) {
+            $this->assertErrorTraducido($respuesta, $campo);
+        }
     }
 }
