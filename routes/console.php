@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\EventoBitacora;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -42,3 +43,48 @@ Artisan::command('mongodb:estado', function () {
         return 1;
     }
 })->purpose('Verifica la conexión con MongoDB');
+
+// Muestra los registros mas recientes de la bitacora (MongoDB).
+//   docker compose exec app php artisan bitacora:ver
+//   docker compose exec app php artisan bitacora:ver --evento=login_fallido --limite=20
+Artisan::command('bitacora:ver {--limite=10 : Cuantos registros mostrar} {--evento= : Filtrar por tipo de evento} {--usuario= : Filtrar por id de usuario}', function () {
+    try {
+        $consulta = EventoBitacora::query()->orderBy('fecha', 'desc')->limit(max(1, (int) $this->option('limite')));
+
+        if ($evento = $this->option('evento')) {
+            $consulta->where('evento', $evento);
+        }
+        if ($usuario = $this->option('usuario')) {
+            $consulta->where('id_usuario', (int) $usuario);
+        }
+
+        $registros = $consulta->get();
+
+        $this->info('Bitácora: '.EventoBitacora::count().' registros en total.');
+
+        if ($registros->isEmpty()) {
+            $this->line('No hay registros con esos filtros. Inicia sesión en la tienda o el panel y vuelve a consultar.');
+
+            return 0;
+        }
+
+        $this->table(
+            ['Fecha (UTC)', 'Evento', 'Usuario', 'Rol', 'IP', 'Dispositivo', 'Detalles'],
+            $registros->map(fn (EventoBitacora $r) => [
+                $r->fecha?->utc()->format('Y-m-d H:i:s'),
+                $r->evento,
+                $r->id_usuario ?? '-',
+                $r->rol ?? '-',
+                $r->ip ?? '-',
+                $r->dispositivo ?? '-',
+                $r->detalles ? json_encode($r->detalles, JSON_UNESCAPED_UNICODE) : '-',
+            ])
+        );
+
+        return 0;
+    } catch (Throwable $e) {
+        $this->error('No se pudo leer la bitácora: '.$e->getMessage());
+
+        return 1;
+    }
+})->purpose('Muestra los registros más recientes de la bitácora (MongoDB)');

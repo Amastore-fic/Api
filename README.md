@@ -13,6 +13,33 @@ Todas las rutas viven bajo `/api/v1`, responden JSON y se autentican con `Author
 
 La app entra a MongoDB con su propio usuario (no con el administrador). Ese usuario lo crea `docker/mongo/init-mongo.js` la primera vez que arranca el contenedor.
 
+### Bitácora (MongoDB)
+
+Cada intento de inicio de sesión queda registrado en la colección `bitacora`:
+
+| Evento | Cuándo |
+|---|---|
+| `login_exitoso` | Inició sesión |
+| `login_fallido` | Correo o contraseña incorrectos |
+| `login_bloqueado` | Demasiados intentos fallidos seguidos |
+| `login_cuenta_inactiva` | La cuenta la bloqueó un administrador |
+| `logout` | Cerró sesión |
+
+- Se guarda: evento, usuario y rol (si existe), IP, dispositivo, navegador y fecha.
+- **Nunca** se guardan contraseñas ni tokens. Del correo solo se guarda su hash (SHA-256), para agrupar intentos contra una misma cuenta sin almacenarlo.
+- Los registros se borran solos después de `BITACORA_DIAS_RETENCION` días (180 por defecto).
+- Si MongoDB está caído, el inicio de sesión funciona igual; el error queda en `storage/logs/laravel.log`.
+- La colección, su validación y sus índices se crean con la migración de `database/migrations/mongodb/`, que corre con el `php artisan migrate` de siempre.
+
+Para ver los registros más recientes:
+
+```bash
+docker compose exec app php artisan bitacora:ver
+docker compose exec app php artisan bitacora:ver --evento=login_fallido --limite=20
+```
+
+Las fechas se muestran en UTC.
+
 ## Requisitos
 
 - **Docker Desktop**, abierto y con el estado *Engine running*. No hace falta instalar PHP, PostgreSQL ni MongoDB.
@@ -72,6 +99,7 @@ Tu `.env` no necesita cambios: si no tiene las variables `MONGO_*`, se usan las 
 | Aplicar migraciones nuevas (después de un `git pull`) | `docker compose exec app php artisan migrate` |
 | Si cambió `docker/php/Dockerfile` o `docker-compose.yml` | `docker compose up -d --build` |
 | Verificar MongoDB | `docker compose exec app php artisan mongodb:estado` |
+| Ver la bitácora | `docker compose exec app php artisan bitacora:ver` |
 | Dependencias nuevas (si cambió `composer.lock`) | `docker compose exec app composer install` |
 | Reiniciar la base con datos de prueba (**borra todo**) | `docker compose exec app php artisan migrate:fresh --seed` |
 
@@ -96,7 +124,7 @@ Usuarios de prueba (contraseña `password123`):
 docker compose exec app php artisan test
 ```
 
-Las pruebas usan SQLite en memoria (ver `phpunit.xml`), no tocan PostgreSQL.
+Las pruebas usan SQLite en memoria (ver `phpunit.xml`) y una bitácora en memoria (`tests/Fakes/BitacoraEnMemoria.php`): no tocan PostgreSQL ni MongoDB, ni necesitan que MongoDB esté encendido.
 
 ## Estructura
 
