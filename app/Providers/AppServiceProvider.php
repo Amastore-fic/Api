@@ -5,6 +5,9 @@ namespace App\Providers;
 use App\Services\Pagos\PasarelaPago;
 use App\Services\Pagos\PasarelaSimulada;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Auth\EloquentUserProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -19,6 +22,22 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        //
+        Auth::provider('usuarios-provider', function ($app, array $config) {
+            return new class($app['hash'], $config['model']) extends EloquentUserProvider {
+                public function retrieveByCredentials(array $credentials)
+                {
+                    if (isset($credentials['email'])) {
+                        $credentials['correo'] = $credentials['email'];
+                        unset($credentials['email']);
+                    }
+                    return parent::retrieveByCredentials($credentials);
+                }
+            };
+        });
+        ResetPassword::createUrlUsing(function ($usuario, string $token) {
+            $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
+            
+            return "{$frontendUrl}/restablecer-password?token={$token}&correo=" . urlencode($usuario->correo);
+        });
     }
 }
