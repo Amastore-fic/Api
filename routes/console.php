@@ -3,7 +3,10 @@
 use App\Models\EventoBitacora;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Str;
 use MongoDB\BSON\UTCDateTime;
 
 Artisan::command('inspire', function () {
@@ -43,6 +46,45 @@ Artisan::command('mongodb:estado', function () {
         return 1;
     }
 })->purpose('Verifica la conexión con MongoDB');
+
+// Comprueba que la app llega a Redis y que la cache lo esta usando.
+//   docker compose exec app php artisan redis:estado
+Artisan::command('redis:estado', function () {
+    try {
+        $redis = Redis::connection('cache');
+        $redis->ping();
+        $info = $redis->info('server');
+        $version = $info['redis_version'] ?? $info['Server']['redis_version'] ?? '?';
+
+        // Escritura de prueba por la cache de Laravel: se guarda, se lee y se borra
+        $clave = '_verificacion_'.Str::random(8);
+        Cache::store('redis')->put($clave, 'ok', 10);
+        $leido = Cache::store('redis')->get($clave);
+        Cache::store('redis')->forget($clave);
+
+        if ($leido !== 'ok') {
+            throw new RuntimeException('se escribió una clave, pero no se pudo leer de vuelta.');
+        }
+
+        $this->info('Redis responde correctamente.');
+        $this->table(['Dato', 'Valor'], [
+            ['Versión del servidor', $version],
+            ['Lectura y escritura', 'OK'],
+            ['Cache de la app (CACHE_STORE)', config('cache.default')],
+        ]);
+
+        if (config('cache.default') === 'database') {
+            $this->warn('La app sigue usando la cache de PostgreSQL. Revisa CACHE_STORE en docker-compose.yml y ejecuta "docker compose up -d".');
+        }
+
+        return 0;
+    } catch (Throwable $e) {
+        $this->error('No se pudo usar Redis: '.$e->getMessage());
+        $this->line('Revisa que el contenedor "redis" esté encendido (docker compose ps). Mientras tanto, la cache usa PostgreSQL.');
+
+        return 1;
+    }
+})->purpose('Verifica la conexión con Redis');
 
 // Muestra los registros mas recientes de la bitacora (MongoDB).
 //   docker compose exec app php artisan bitacora:ver
