@@ -33,9 +33,10 @@ class AuthController extends Controller
             'rol' => RolUsuario::Cliente,
         ]);
 
+        // Queda con sesion iniciada: misma respuesta que el login, sin pedir la contrasena otra vez
         return response()->json([
             'message' => 'Cuenta de cliente creada.',
-            'usuario' => $usuario,
+            ...$this->sesionPara($usuario, $request),
         ], 201);
     }
 
@@ -62,8 +63,23 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Cuenta de vendedor creada.',
-            'usuario' => $usuario,
+            ...$this->sesionPara($usuario, $request),
         ], 201);
+    }
+
+    // Token y datos de sesion, con la misma forma que la respuesta del login
+    private function sesionPara(Usuario $usuario, Request $request): array
+    {
+        $token = $usuario->createToken(
+            $request->input('dispositivo', 'web'),
+            [$usuario->rol->value],
+        );
+
+        return [
+            'token' => $token->plainTextToken,
+            'tipo' => 'Bearer',
+            'usuario' => $usuario->load('vendedor'),
+        ];
     }
 
     public function login(LoginRequest $request, BitacoraService $bitacora): JsonResponse
