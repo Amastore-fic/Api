@@ -32,6 +32,8 @@ class RegistrarClienteRequest extends FormRequest
             'correo' => ['required', 'string', 'email', 'max:255', 'unique:usuarios,correo'],
             'password' => ['required', 'string', 'confirmed', Password::min(8)->letters()->numbers()],
             'telefono' => ['nullable', 'string', 'max:15'],
+            // Nombre del dispositivo para el token con el que entra al registrarse (p. ej. "web-tienda")
+            'dispositivo' => ['nullable', 'string', 'max:100'],
         ];
     }
 
