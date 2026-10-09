@@ -99,9 +99,11 @@ return [
 
         'failover' => [
             'driver' => 'failover',
+            // Redis primero; si no responde, la tabla "cache" de PostgreSQL.
+            // Asi una caida de Redis vuelve la app mas lenta, pero no la tumba.
             'stores' => [
+                'redis',
                 'database',
-                'array',
             ],
         ],
 

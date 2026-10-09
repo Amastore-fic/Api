@@ -1,4 +1,4 @@
-# Etapa base: PHP + extensiones que Laravel necesita para PostgreSQL y MongoDB
+# Etapa base: PHP + extensiones que Laravel necesita para PostgreSQL, MongoDB y Redis
 FROM php:8.4-fpm-alpine AS base
 
 RUN apk add --no-cache \
@@ -17,6 +17,10 @@ RUN docker-php-ext-install pdo pdo_pgsql pgsql zip intl mbstring bcmath
 # Extension de MongoDB (la usa el paquete mongodb/laravel-mongodb)
 RUN pecl install mongodb \
     && docker-php-ext-enable mongodb
+
+# Extension de Redis (phpredis): la usa la cache de Laravel
+RUN pecl install redis \
+    && docker-php-ext-enable redis
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
