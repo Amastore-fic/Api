@@ -21,6 +21,7 @@ use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
+use App\Notifications\PasswordNuevaNotification;
 
 class AuthController extends Controller
 {
@@ -144,7 +145,59 @@ class AuthController extends Controller
         return response()->json($request->user()->load('vendedor'));
     }
 
+
     public function sendResetLinkEmail(Request $request): JsonResponse
+    {
+        $request->validate(['correo' => 'required|email']);
+
+        $correo = Str::lower(trim($request->correo));
+        $respuesta = ['message' => 'Si el correo está registrado, recibirás tu nueva contraseña.'];
+
+        //permite una  solicitud por correo cada 60 segundos
+        $key = 'olvide-password|'.$correo;
+        if (RateLimiter::tooManyAttempts($key, 1)) {
+            return response()->json($respuesta);
+        }
+        RateLimiter::hit($key, 60);
+
+        try {
+            $usuario = Usuario::where('correo', $correo)->first();
+
+            if ($usuario && $usuario->activo) {
+                $nueva = $this->generarPassword();
+
+                //si el envío falla, se revierte el cambio y el usuario conserva su clave actual
+                DB::transaction(function () use ($usuario, $nueva) {
+                    $usuario->password = $nueva; //el cast 'hashed' aplica bcrypt
+                    $usuario->setRememberToken(Str::random(60));
+                    $usuario->save();
+
+                    $usuario->tokens()->delete(); //cierra las demass seciones
+
+                    $usuario->notify(new PasswordNuevaNotification($nueva));
+                });
+            }
+        } catch (\Throwable $e) {
+            //no se cambia la contrasena
+            Log::error('No se pudo enviar la nueva contraseña.', ['error' => $e->getMessage()]);
+        }
+
+        //misma respuesta si existe o no la cuenta con ese correo
+        return response()->json($respuesta);
+    }
+
+    private function generarPassword(int $longitud = 16): string
+    {
+        //el bucle garantiza letra + número
+        do {
+            $password = Str::password($longitud, symbols: false);
+        } while (! preg_match('/[A-Za-z]/', $password) || ! preg_match('/\d/', $password));
+
+        return $password;
+    }
+
+
+    /* public function sendResetLinkEmail(Request $request): JsonResponse
     {
         $request->validate(['correo' => 'required|email']);
 
@@ -162,7 +215,7 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Si el correo está registrado, recibirás las instrucciones.',
         ]);
-    }
+    } */
     
     public function reset(Request $request): JsonResponse
     {
