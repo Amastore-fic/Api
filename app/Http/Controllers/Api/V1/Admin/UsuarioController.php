@@ -23,11 +23,14 @@ class UsuarioController extends Controller
         $request->validate([
             'rol' => ['nullable', Rule::enum(RolUsuario::class)],
             'buscar' => ['nullable', 'string', 'max:100'],
+            'activo' => ['nullable', 'boolean'],
+            'por_pagina' => ['nullable', 'integer', 'in:6,12,24'],
         ]);
 
         $usuarios = Usuario::query()
-            ->with('vendedor') // los vendedores traen sus datos comerciales
+            ->with('vendedor')
             ->when($request->rol, fn ($q, $rol) => $q->where('rol', $rol))
+            ->when($request->filled('activo'), fn ($q) => $q->where('activo', $request->boolean('activo')))
             ->when($request->buscar, function ($q, $buscar) {
                 $q->where(fn ($q) => $q
                     ->where('nombre', 'ilike', "%{$buscar}%")
@@ -35,7 +38,7 @@ class UsuarioController extends Controller
                     ->orWhere('correo', 'ilike', "%{$buscar}%"));
             })
             ->orderBy('nombre') //ordena alfabeticamente por nombre en la lista
-            ->paginate(15); //se muestra de 15 en 15, con el parametro page
+            ->paginate($request->integer('por_pagina', 15)); //se muestra de 15 en 15, con el parametro page
         
         return response()->json($usuarios);
     }
