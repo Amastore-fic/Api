@@ -1,12 +1,57 @@
-# CompraSegura · API
+# Amastore · API
 
-API REST (Laravel 13 + PostgreSQL) que consumen la web y la app Android. Monolito modular en capas: **rutas → middleware de rol → controlador → servicio → modelo**.
+API REST (Laravel 13 + PostgreSQL + MongoDB + Redis) que consumen la web y la app Android. Monolito modular en capas: **rutas → middleware de rol → controlador → servicio → modelo**.
 
 Todas las rutas viven bajo `/api/v1`, responden JSON y se autentican con `Authorization: Bearer <token>` (Laravel Sanctum).
 
+### Dos bases de datos
+
+| Base | Para qué | Contenedor |
+|---|---|---|
+| **PostgreSQL** (principal) | Todo lo que necesita relaciones y consistencia: usuarios, vendedores, productos, carrito, pedidos, pagos, calificaciones | `comprasegura_db` |
+| **MongoDB** | Datos sin relaciones o que crecen mucho, como la bitácora de eventos | `comprasegura_mongo` |
+
+La app entra a MongoDB con su propio usuario (no con el administrador). Ese usuario lo crea `docker/mongo/init-mongo.js` la primera vez que arranca el contenedor.
+
+### Caché (Redis)
+
+La caché de Laravel (`Cache::remember(...)`, `Cache::put(...)`, etc.) vive en Redis, en el contenedor `comprasegura_redis`.
+
+- `docker-compose.yml` fija `CACHE_STORE=failover`: se usa Redis y, si no responde, la tabla `cache` de PostgreSQL. Una caída de Redis no tumba la app, pero la vuelve **muy lenta** (unos 4-5 s por cada uso de la caché, casi todo esperando a que Docker diga que el contenedor no existe). Si notas la API lenta, revisa `docker compose ps`.
+- Redis solo guarda caché: no escribe nada en disco, así que al apagar el contenedor se vacía. **No guardes ahí nada que no se pueda volver a calcular.**
+- Tiene un límite de 256 MB; si se llena, borra solo las claves que menos se usan.
+- Para vaciar la caché: `docker compose exec app php artisan cache:clear`.
+
+### Bitácora (MongoDB)
+
+Cada intento de inicio de sesión queda registrado en la colección `bitacora`:
+
+| Evento | Cuándo |
+|---|---|
+| `login_exitoso` | Inició sesión |
+| `login_fallido` | Correo o contraseña incorrectos |
+| `login_bloqueado` | Demasiados intentos fallidos seguidos |
+| `login_cuenta_inactiva` | La cuenta la bloqueó un administrador |
+| `logout` | Cerró sesión |
+
+- Se guarda: evento, usuario y rol (si existe), IP, dispositivo, navegador y fecha.
+- **Nunca** se guardan contraseñas ni tokens. Del correo solo se guarda su hash (SHA-256), para agrupar intentos contra una misma cuenta sin almacenarlo.
+- Los registros se borran solos después de `BITACORA_DIAS_RETENCION` días (180 por defecto).
+- Si MongoDB está caído, el inicio de sesión funciona igual; el error queda en `storage/logs/laravel.log`.
+- La colección, su validación y sus índices se crean con la migración de `database/migrations/mongodb/`, que corre con el `php artisan migrate` de siempre.
+
+Para ver los registros más recientes:
+
+```bash
+docker compose exec app php artisan bitacora:ver
+docker compose exec app php artisan bitacora:ver --evento=login_fallido --limite=20
+```
+
+Las fechas se muestran en UTC.
+
 ## Requisitos
 
-- **Docker Desktop**, abierto y con el estado *Engine running*. No hace falta instalar PHP ni PostgreSQL.
+- **Docker Desktop**, abierto y con el estado *Engine running*. No hace falta instalar PHP, PostgreSQL, MongoDB ni Redis.
 - En Windows, Docker Desktop necesita WSL 2. Si no lo tienes, abre PowerShell como administrador, ejecuta `wsl --install` y reinicia.
 
 ## Arrancar (primera vez)
@@ -33,6 +78,37 @@ docker compose exec app php artisan migrate --seed
 
 La API queda en `http://localhost:8000/api/v1` y el chequeo de salud en `http://localhost:8000/up`. Para comprobarla, abre `http://localhost:8000/api/v1/productos` en el navegador: deben aparecer 6 productos.
 
+Para comprobar MongoDB:
+
+```bash
+docker compose exec app php artisan mongodb:estado
+```
+
+Debe decir *"MongoDB responde correctamente"* con la versión del servidor y *Lectura y escritura: OK*.
+
+Para comprobar Redis:
+
+```bash
+docker compose exec app php artisan redis:estado
+```
+
+Debe decir *"Redis responde correctamente"*, *Lectura y escritura: OK* y *Cache de la app: failover*.
+
+### Si ya tenías el proyecto antes de que se agregaran MongoDB y Redis
+
+Hay que reconstruir la imagen de PHP (ahora incluye las extensiones de MongoDB y Redis), instalar los paquetes nuevos y aplicar las migraciones:
+
+```bash
+git pull
+docker compose up -d --build
+docker compose exec app composer install
+docker compose exec app php artisan migrate
+docker compose exec app php artisan mongodb:estado
+docker compose exec app php artisan redis:estado
+```
+
+Tu `.env` no necesita cambios: si no tiene las variables `MONGO_*` o `REDIS_*`, se usan las mismas de `.env.example`.
+
 ## Uso diario
 
 | Qué | Comando |
@@ -41,6 +117,11 @@ La API queda en `http://localhost:8000/api/v1` y el chequeo de salud en `http://
 | Apagar | `docker compose down` |
 | Ver logs | `docker compose logs -f app` |
 | Aplicar migraciones nuevas (después de un `git pull`) | `docker compose exec app php artisan migrate` |
+| Si cambió `docker/php/Dockerfile` o `docker-compose.yml` | `docker compose up -d --build` |
+| Verificar MongoDB | `docker compose exec app php artisan mongodb:estado` |
+| Verificar Redis | `docker compose exec app php artisan redis:estado` |
+| Vaciar la caché | `docker compose exec app php artisan cache:clear` |
+| Ver la bitácora | `docker compose exec app php artisan bitacora:ver` |
 | Dependencias nuevas (si cambió `composer.lock`) | `docker compose exec app composer install` |
 | Reiniciar la base con datos de prueba (**borra todo**) | `docker compose exec app php artisan migrate:fresh --seed` |
 
@@ -48,7 +129,8 @@ La API queda en `http://localhost:8000/api/v1` y el chequeo de salud en `http://
 
 - **`failed to connect to the docker API ... docker_engine`**: Docker Desktop no está abierto. Ábrelo y espera a que diga *Engine running*.
 - **`"docker" no se reconoce como un comando`**: Docker Desktop no está instalado, o la terminal se abrió antes de instalarlo. Cierra la terminal y abre una nueva.
-- **`port is already allocated` (8000 o 5432)**: otro programa usa ese puerto (por ejemplo, un PostgreSQL instalado en Windows). Cambia `APP_PORT` o `DB_FORWARD_PORT` en tu `.env` y vuelve a ejecutar `docker compose up -d`.
+- **`port is already allocated` (8000, 5432, 27017 o 6379)**: otro programa usa ese puerto (por ejemplo, un PostgreSQL, MongoDB o Redis instalado en tu computadora). Cambia `APP_PORT`, `DB_FORWARD_PORT`, `MONGO_FORWARD_PORT` o `REDIS_FORWARD_PORT` en tu `.env` y vuelve a ejecutar `docker compose up -d`.
+- **`mongodb:estado` dice *Authentication failed***: cambiaste `MONGO_USERNAME` o `MONGO_PASSWORD` después de que el contenedor de MongoDB ya existía. El usuario solo se crea la primera vez; para recrearlo hay que borrar los datos de MongoDB: `docker compose down` y luego `docker volume rm comprasegura_comprasegura-mongo`.
 
 Usuarios de prueba (contraseña `password123`):
 
@@ -64,7 +146,7 @@ Usuarios de prueba (contraseña `password123`):
 docker compose exec app php artisan test
 ```
 
-Las pruebas usan SQLite en memoria (ver `phpunit.xml`), no tocan PostgreSQL.
+Las pruebas usan SQLite en memoria (ver `phpunit.xml`) y una bitácora en memoria (`tests/Fakes/BitacoraEnMemoria.php`): no tocan PostgreSQL, MongoDB ni Redis (la caché de las pruebas es `array`), ni necesitan que estén encendidos.
 
 ## Estructura
 

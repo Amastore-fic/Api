@@ -23,6 +23,42 @@ class AuthTest extends TestCase
         $this->assertDatabaseHas('usuarios', ['correo' => 'ana@correo.test']);
     }
 
+    public function test_al_registrarse_queda_con_sesion_iniciada(): void
+    {
+        $token = $this->postJson('/api/v1/auth/registro', [
+            'nombre' => 'Ana',
+            'apellido' => 'Lopez',
+            'correo' => 'ana@correo.test',
+            'password' => 'secreto123',
+            'password_confirmation' => 'secreto123',
+            'dispositivo' => 'web-tienda',
+        ])->assertCreated()->assertJsonPath('tipo', 'Bearer')->json('token');
+
+        $this->assertNotEmpty($token);
+        $this->assertDatabaseHas('personal_access_tokens', ['name' => 'web-tienda']);
+
+        $this->withToken($token)->getJson('/api/v1/auth/perfil')
+            ->assertOk()
+            ->assertJsonPath('correo', 'ana@correo.test');
+    }
+
+    public function test_el_vendedor_queda_con_sesion_iniciada_al_registrarse(): void
+    {
+        $token = $this->postJson('/api/v1/auth/registro-vendedor', [
+            'nombre' => 'Luis',
+            'apellido' => 'Perez',
+            'correo' => 'luis@correo.test',
+            'password' => 'secreto123',
+            'password_confirmation' => 'secreto123',
+            'nombre_comercial' => 'Tienda Luis',
+        ])->assertCreated()->json('token');
+
+        $this->withToken($token)->getJson('/api/v1/auth/perfil')
+            ->assertOk()
+            ->assertJsonPath('rol', 'vendedor')
+            ->assertJsonPath('vendedor.nombre_comercial', 'Tienda Luis');
+    }
+
     public function test_un_vendedor_se_registra_con_sus_datos_de_negocio(): void
     {
         $this->postJson('/api/v1/auth/registro-vendedor', [

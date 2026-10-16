@@ -63,7 +63,7 @@ return [
 
     'providers' => [
         'users' => [
-            'driver' => 'eloquent',
+            'driver' => 'usuarios-provider',
             'model' => env('AUTH_MODEL', Usuario::class),
         ],
 
@@ -96,8 +96,10 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
+            // Minutos que vale el enlace de recuperacion de contrasena
+            'expire' => (int) env('PASSWORD_RESET_EXPIRE', 15),
             'throttle' => 60,
+            'column' => 'correo', 
         ],
     ],
 

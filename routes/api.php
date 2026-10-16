@@ -23,9 +23,15 @@ Route::prefix('auth')->group(function () {
     Route::post('registro-vendedor', [AuthController::class, 'registroVendedor']);
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
+    // ---- Nuevas rutas de recuperación de contraseña ----
+    Route::post('forgot-password', [AuthController::class, 'sendResetLinkEmail'])->middleware('throttle:5,1');
+    Route::post('reset-password', [AuthController::class, 'reset'])->middleware('throttle:5,1');
+
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('perfil', [AuthController::class, 'perfil']);
+        Route::put('perfil', [AuthController::class, 'actualizarPerfil']);
+        Route::put('password', [AuthController::class, 'cambiarPassword']);
     });
 });
 
@@ -49,6 +55,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('direcciones', [DireccionController::class, 'index']);
         Route::post('direcciones', [DireccionController::class, 'store']);
+        Route::put('direcciones/{id}', [DireccionController::class, 'update'])->whereNumber('id');
+        Route::delete('direcciones/{id}', [DireccionController::class, 'destroy'])->whereNumber('id');
 
         Route::post('pedidos', [PedidoController::class, 'store']);
         Route::get('pedidos', [PedidoController::class, 'index']);

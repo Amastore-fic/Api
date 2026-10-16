@@ -99,6 +99,22 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // Segunda base (NoSQL) para datos que no necesitan relaciones, como la bitacora.
+        // PostgreSQL sigue siendo la base principal. En Docker, MONGODB_URI la arma
+        // docker-compose.yml con el usuario de la app.
+        'mongodb' => [
+            'driver' => 'mongodb',
+            'dsn' => env('MONGODB_URI', 'mongodb://127.0.0.1:27017'),
+            'database' => env('MONGODB_DATABASE', 'comprasegura'),
+            'options' => [
+                // Si MongoDB no responde, rendirse en 2 s (por defecto son 10-30 s).
+                // Asi una caida de MongoDB no deja colgado el inicio de sesion.
+                // PHP intenta conectar una sola vez, asi que manda connectTimeoutMS.
+                'connectTimeoutMS' => (int) env('MONGODB_TIMEOUT_MS', 2000),
+                'serverSelectionTimeoutMS' => (int) env('MONGODB_TIMEOUT_MS', 2000),
+            ],
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
@@ -160,6 +176,9 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_DB', '0'),
+            // Si Redis no responde, rendirse en 2 s (por defecto phpredis espera hasta 60 s)
+            'timeout' => (float) env('REDIS_TIMEOUT', 2),
+            'read_timeout' => (float) env('REDIS_TIMEOUT', 2),
             'max_retries' => env('REDIS_MAX_RETRIES', 3),
             'backoff_algorithm' => env('REDIS_BACKOFF_ALGORITHM', 'decorrelated_jitter'),
             'backoff_base' => env('REDIS_BACKOFF_BASE', 100),
@@ -173,6 +192,8 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_CACHE_DB', '1'),
+            'timeout' => (float) env('REDIS_TIMEOUT', 2),
+            'read_timeout' => (float) env('REDIS_TIMEOUT', 2),
             'max_retries' => env('REDIS_MAX_RETRIES', 3),
             'backoff_algorithm' => env('REDIS_BACKOFF_ALGORITHM', 'decorrelated_jitter'),
             'backoff_base' => env('REDIS_BACKOFF_BASE', 100),

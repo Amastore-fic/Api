@@ -7,11 +7,15 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Contracts\Auth\CanResetPassword;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Auth\Notifications\ResetPassword as ResetPasswordNotification;
 use Laravel\Sanctum\HasApiTokens;
 
-class Usuario extends Authenticatable
+class Usuario extends Authenticatable implements CanResetPassword
 {
-    use HasApiTokens, HasFactory;
+    use HasApiTokens, HasFactory, Notifiable;
 
     protected $table = 'usuarios';
 
@@ -67,5 +71,49 @@ class Usuario extends Authenticatable
     public function calificaciones(): HasMany
     {
         return $this->hasMany(Calificacion::class, 'id_cliente');
+    }
+
+    public function getEmailForPasswordReset()
+    {
+        return $this->correo;
+    }
+
+    // Direccion a la que se envian los correos (Laravel busca "email" y aqui es "correo").
+    // Sin esto el correo de recuperacion nunca se enviaba: la direccion quedaba vacia.
+    public function routeNotificationForMail(): string
+    {
+        return $this->correo;
+    }
+
+    public function sendPasswordResetNotification($token)
+    {
+        $this->notify(new class($token) extends ResetPasswordNotification {
+            public $token;
+
+            public function __construct($token)
+            {
+                $this->token = $token;
+            }
+
+            public function toMail($notifiable)
+            {
+                $url = rtrim(config('app.frontend_url'), '/')
+                    .'/restablecer-password?token='.urlencode($this->token)
+                    .'&correo='.urlencode($notifiable->correo);
+                $minutos = config('auth.passwords.users.expire');
+
+                return (new MailMessage)
+                    ->subject('Restablecer contraseña')
+                    ->line('Estás recibiendo este correo porque solicitaste un restablecimiento de contraseña para tu cuenta.')
+                    ->action('Restablecer contraseña', $url)
+                    ->line("El enlace vence en {$minutos} minutos y solo funciona una vez.")
+                    ->line('Si no solicitaste esto, puedes ignorar este mensaje: tu contraseña no cambiará.');
+            }
+        });
+    }
+
+    public function findForPasswordReset($credentials)
+    {
+        return $this->where('correo', $credentials['email'])->first();
     }
 }

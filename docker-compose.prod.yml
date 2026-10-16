@@ -6,13 +6,21 @@ x-app-env: &app-env
   APP_DEBUG: false
   APP_KEY: ${APP_KEY}
   APP_URL: ${APP_URL}
+  FRONTEND_URL: ${FRONTEND_URL}
+  PASSWORD_RESET_EXPIRE: ${PASSWORD_RESET_EXPIRE:-15}
   DB_CONNECTION: pgsql
   DB_HOST: db
   DB_PORT: 5432
   DB_DATABASE: ${DB_DATABASE}
   DB_USERNAME: ${DB_USERNAME}
   DB_PASSWORD: ${DB_PASSWORD}
-  CACHE_STORE: database
+  MONGODB_URI: mongodb://${MONGO_USERNAME:?Falta MONGO_USERNAME en .env}:${MONGO_PASSWORD:?Falta MONGO_PASSWORD en .env}@mongodb:27017/${MONGODB_DATABASE:-comprasegura}?authSource=${MONGODB_DATABASE:-comprasegura}
+  MONGODB_DATABASE: ${MONGODB_DATABASE:-comprasegura}
+  BITACORA_DIAS_RETENCION: ${BITACORA_DIAS_RETENCION:-180}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?Falta REDIS_PASSWORD en .env}
+  CACHE_STORE: failover
   SESSION_DRIVER: database
   QUEUE_CONNECTION: database
   SANCTUM_EXPIRATION: ${SANCTUM_EXPIRATION}
@@ -35,6 +43,10 @@ services:
       <<: *app-env
     depends_on:
       db:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - comprasegura_net
@@ -71,10 +83,50 @@ services:
     networks:
       - comprasegura_net
 
+  # Sin puerto publicado: solo la app la alcanza por la red interna de Docker
+  mongodb:
+    image: mongo:8
+    container_name: comprasegura_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?Falta MONGO_ROOT_USERNAME en .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Falta MONGO_ROOT_PASSWORD en .env}
+      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE:-comprasegura}
+      MONGO_APP_USERNAME: ${MONGO_USERNAME:?Falta MONGO_USERNAME en .env}
+      MONGO_APP_PASSWORD: ${MONGO_PASSWORD:?Falta MONGO_PASSWORD en .env}
+    volumes:
+      - comprasegura-mongo:/data/db
+      - ./docker/mongo/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - comprasegura_net
+
+  # Solo cache y sin puerto publicado: no guarda nada en disco y pide contrasena
+  redis:
+    image: redis:8-alpine
+    container_name: comprasegura_redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Falta REDIS_PASSWORD en .env}", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?Falta REDIS_PASSWORD en .env}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - comprasegura_net
+
 networks:
   comprasegura_net:
     driver: bridge
 
 volumes:
   comprasegura-postgres:
+  comprasegura-mongo:
   app-public:
