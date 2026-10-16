@@ -1,4 +1,4 @@
-# CompraSegura · API
+# Amastore · API
 
 API REST (Laravel 13 + PostgreSQL + MongoDB + Redis) que consumen la web y la app Android. Monolito modular en capas: **rutas → middleware de rol → controlador → servicio → modelo**.
 
