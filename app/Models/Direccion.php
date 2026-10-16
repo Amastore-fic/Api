@@ -4,9 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Direccion extends Model
 {
+    // Los pedidos referencian la direccion por FK: al borrarla solo se oculta
+    use SoftDeletes;
+
     protected $table = 'direcciones';
 
     protected $fillable = [

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Enums\EventoBitacora;
 use App\Enums\RolUsuario;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ActualizarPerfilRequest;
+use App\Http\Requests\Auth\CambiarPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegistrarClienteRequest;
 use App\Http\Requests\Auth\RegistrarVendedorRequest;
@@ -21,6 +23,7 @@ use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
+use Laravel\Sanctum\PersonalAccessToken;
 use App\Notifications\PasswordNuevaNotification;
 
 class AuthController extends Controller
@@ -143,6 +146,43 @@ class AuthController extends Controller
     public function perfil(Request $request): JsonResponse
     {
         return response()->json($request->user()->load('vendedor'));
+    }
+
+    // Solo cambia los campos enviados; responde igual que GET /auth/perfil
+    public function actualizarPerfil(ActualizarPerfilRequest $request): JsonResponse
+    {
+        $usuario = $request->user();
+
+        DB::transaction(function () use ($request, $usuario) {
+            $usuario->update($request->safe()->only(['nombre', 'apellido', 'correo', 'telefono']));
+
+            // Las reglas de vendedor solo existen para ese rol, asi que a otros les llega vacio
+            $datosVendedor = $request->safe()->only(['nombre_comercial', 'sucursal', 'descripcion']);
+            if ($datosVendedor && $usuario->vendedor) {
+                $usuario->vendedor->update($datosVendedor);
+            }
+        });
+
+        return response()->json($usuario->refresh()->load('vendedor'));
+    }
+
+    public function cambiarPassword(CambiarPasswordRequest $request): JsonResponse
+    {
+        $usuario = $request->user();
+
+        $usuario->password = $request->password; // el cast 'hashed' aplica bcrypt
+        $usuario->setRememberToken(Str::random(60));
+        $usuario->save();
+
+        // Cierra las demas sesiones y conserva la de este dispositivo
+        $tokens = $usuario->tokens();
+        $actual = $usuario->currentAccessToken();
+        if ($actual instanceof PersonalAccessToken) {
+            $tokens->whereKeyNot($actual->getKey());
+        }
+        $tokens->delete();
+
+        return response()->json(['message' => 'Contraseña actualizada.']);
     }
 
 
