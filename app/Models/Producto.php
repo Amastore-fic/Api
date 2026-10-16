@@ -4,9 +4,11 @@ namespace App\Models;
 
 use App\Enums\EstadoProducto;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class Producto extends Model
 {
@@ -26,10 +28,30 @@ class Producto extends Model
     protected function casts(): array
     {
         return [
-            'precio' => 'decimal:2',
+            'precio'      => 'decimal:2',
             'existencias' => 'integer',
-            'estado' => EstadoProducto::class,
+            'estado'      => EstadoProducto::class,
         ];
+    }
+
+    /**
+     * Accessor para retornar la URL pública de la imagen.
+     */
+    protected function imagenUrl(): Attribute
+    {
+        return Attribute::make(
+            get: function (?string $value) {
+                if (!$value) {
+                    return null;
+                }
+
+                if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
+                    return $value;
+                }
+
+                return Storage::disk('public')->url($value);
+            }
+        );
     }
 
     public function scopeActivos(Builder $query): Builder
