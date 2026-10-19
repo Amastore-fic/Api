@@ -73,4 +73,12 @@ class Producto extends Model
     {
         return $this->hasMany(Calificacion::class, 'id_producto');
     }
+
+    //productos activos de vendedor que no esta bloqueado (los que ven los  clientes)
+    public function scopeVisibles(Builder $query): Builder
+    {
+        return $query->activos()
+            ->whereHas('vendedor.usuario', fn ($q) => $q->where('activo', true));
+    }
+
 }
