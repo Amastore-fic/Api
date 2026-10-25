@@ -11,7 +11,7 @@ class CatalogoService
 {
     public function buscar(array $filtros): LengthAwarePaginator
     {
-        return Producto::activos()
+        return Producto::visibles()
             ->with(['categoria:id,nombre', 'vendedor:id,nombre_comercial,codigo_vendedor'])
             ->withAvg('calificaciones', 'puntuacion')
             ->when($filtros['buscar'] ?? null, fn ($q, $texto) => $q->whereLike('titulo', "%{$texto}%"))
@@ -22,7 +22,7 @@ class CatalogoService
 
     public function ficha(int $id): Producto
     {
-        return Producto::activos()
+        return Producto::visibles()
             ->with([
                 'categoria:id,nombre',
                 'vendedor:id,nombre_comercial,codigo_vendedor,sucursal,descripcion',
