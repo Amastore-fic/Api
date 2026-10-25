@@ -1,5 +1,5 @@
 # Etapa base: PHP + extensiones que Laravel necesita para PostgreSQL, MongoDB y Redis
-FROM php:8.4-fpm-alpine AS base
+FROM php:8.4.27-fpm-alpine AS base
 
 RUN apk add --no-cache \
     postgresql-dev \
