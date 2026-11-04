@@ -5,7 +5,6 @@ namespace App\Providers;
 use App\Services\Pagos\PasarelaPago;
 use App\Services\Pagos\PasarelaSimulada;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Auth\EloquentUserProvider;
 
@@ -39,12 +38,6 @@ class AppServiceProvider extends ServiceProvider
                     return parent::retrieveByCredentials($credentials);
                 }
             };
-        });
-        ResetPassword::createUrlUsing(function ($usuario, string $token) {
-            $frontendUrl = rtrim(config('app.frontend_url'), '/');
-
-
-            return "{$frontendUrl}/restablecer-password?token={$token}&correo=" . urlencode($usuario->correo);
         });
     }
 }

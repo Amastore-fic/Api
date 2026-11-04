@@ -1,21 +1,21 @@
 <x-mail::message>
 # Hola, {{ $nombre }}
 
-Recibimos una solicitud para recuperar el acceso a tu cuenta, así que te asignamos una contraseña nueva:
+Recibimos una solicitud para recuperar el acceso a tu cuenta. Esta es tu contraseña temporal:
 
 <x-mail::panel>
 <span class="dato-destacado">{{ $password }}</span>
 </x-mail::panel>
 
-Tu contraseña anterior ya no funciona y se cerraron las sesiones que tenías abiertas.
+**Vence en {{ $minutos }} minutos.** Tu contraseña actual sigue funcionando hasta que uses esta.
 
 <x-mail::button :url="$urlLogin">
 Iniciar sesión
 </x-mail::button>
 
-Al entrar, cámbiala por una que puedas recordar desde **Mi cuenta → Inicio de sesión y seguridad**.
+Si entras con ella, reemplazará a tu contraseña anterior y se cerrarán las sesiones abiertas en otros dispositivos. Al entrar podrás cambiarla por una que recuerdes.
 
-**¿No fuiste tú?** Entra con esta contraseña y cámbiala para proteger tu cuenta.
+**¿No fuiste tú?** Ignora este correo: tu contraseña no ha cambiado y esta dejará de funcionar sola.
 
 Saludos,<br>
 El equipo de {{ config('app.name') }}

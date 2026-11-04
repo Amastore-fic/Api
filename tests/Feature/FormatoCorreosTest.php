@@ -3,30 +3,31 @@
 namespace Tests\Feature;
 
 use App\Models\Usuario;
-use App\Notifications\PasswordNuevaNotification;
+use App\Notifications\PasswordTemporalNotification;
 use Illuminate\Mail\Markdown;
 use Illuminate\Notifications\Messages\MailMessage;
 use Tests\TestCase;
 
 class FormatoCorreosTest extends TestCase
 {
-    public function test_el_correo_de_nueva_contrasena_muestra_lo_necesario_para_entrar(): void
+    public function test_el_correo_de_contrasena_temporal_muestra_lo_necesario_para_entrar(): void
     {
         config(['app.frontend_url' => 'https://tienda.test/']);
 
-        $correo = (new PasswordNuevaNotification('Abc123Def456'))
+        $correo = (new PasswordTemporalNotification('Abc123Def456', 10))
             ->toMail(new Usuario(['nombre' => 'Ana']));
         $html = (string) $correo->render();
 
-        $this->assertSame('Tu nueva contraseña', $correo->subject);
+        $this->assertSame('Tu contraseña temporal', $correo->subject);
         $this->assertStringContainsString('Hola, Ana', $html);
         $this->assertStringContainsString('Abc123Def456', $html);
+        $this->assertStringContainsString('Vence en 10 minutos', $html);
         $this->assertStringContainsString('https://tienda.test/login', $html);
     }
 
     public function test_el_nombre_del_usuario_no_se_interpreta_como_html(): void
     {
-        $html = (string) (new PasswordNuevaNotification('Abc123Def456'))
+        $html = (string) (new PasswordTemporalNotification('Abc123Def456', 10))
             ->toMail(new Usuario(['nombre' => '<b>Ana</b>']))
             ->render();
 
@@ -37,9 +38,10 @@ class FormatoCorreosTest extends TestCase
     {
         config(['app.frontend_url' => 'https://tienda.test', 'app.url' => 'https://api.test']);
 
-        $texto = (string) app(Markdown::class)->renderText('correos.password-nueva', [
+        $texto = (string) app(Markdown::class)->renderText('correos.password-temporal', [
             'nombre' => 'Ana',
             'password' => 'Abc123Def456',
+            'minutos' => 10,
             'urlLogin' => 'https://tienda.test/login',
         ]);
 

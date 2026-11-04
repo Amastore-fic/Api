@@ -10,6 +10,7 @@ use App\Http\Requests\Auth\CambiarPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegistrarClienteRequest;
 use App\Http\Requests\Auth\RegistrarVendedorRequest;
+use App\Http\Requests\Auth\RestablecerPasswordRequest;
 use App\Models\Usuario;
 use App\Models\Vendedor;
 use App\Services\BitacoraService;
@@ -18,13 +19,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Password;
-use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rules\Password as PasswordRule;
 use Laravel\Sanctum\PersonalAccessToken;
-use App\Notifications\PasswordNuevaNotification;
+use App\Notifications\PasswordTemporalNotification;
 
 class AuthController extends Controller
 {
@@ -103,7 +101,10 @@ class AuthController extends Controller
         $usuario = Usuario::where('correo', strtolower($request->correo))->first();
 
        
-        if (! $usuario || ! Hash::check($request->password, $usuario->password)) {
+        $conPasswordNormal = $usuario && Hash::check($request->password, $usuario->password);
+        $conPasswordTemporal = $usuario && ! $conPasswordNormal && $usuario->passwordTemporalValida($request->password);
+
+        if (! $conPasswordNormal && ! $conPasswordTemporal) {
             
             RateLimiter::hit($throttleKey, 15);
             $bitacora->registrar(EventoBitacora::LoginFallido, $request, $usuario);
@@ -120,6 +121,17 @@ class AuthController extends Controller
 
         
         RateLimiter::clear($throttleKey);
+
+        if ($conPasswordTemporal) {
+            // La temporal reemplaza a la anterior. Va despues de revisar que la cuenta este activa
+            $this->guardarPassword($usuario, $request->password, [
+                'cambio_password_hasta' => now()->addMinutes(config('auth.password_temporal.cambio_directo_minutos')),
+            ]);
+            $bitacora->registrar(EventoBitacora::LoginPasswordTemporal, $request, $usuario);
+        } elseif ($usuario->password_temporal) {
+            // Recordo su contrasena: la temporal que seguia pendiente ya no hace falta
+            $usuario->forceFill(['password_temporal' => null, 'password_temporal_vence' => null])->save();
+        }
 
         $token = $usuario->createToken(
             $request->input('dispositivo', 'web'),
@@ -170,28 +182,67 @@ class AuthController extends Controller
     {
         $usuario = $request->user();
 
-        $usuario->password = $request->password; // el cast 'hashed' aplica bcrypt
-        $usuario->setRememberToken(Str::random(60));
-        $usuario->save();
+        $this->guardarPassword($usuario, $request->password);
 
-        // Cierra las demas sesiones y conserva la de este dispositivo
-        $tokens = $usuario->tokens();
-        $actual = $usuario->currentAccessToken();
-        if ($actual instanceof PersonalAccessToken) {
-            $tokens->whereKeyNot($actual->getKey());
+        return response()->json([
+            'message' => 'Contraseña actualizada.',
+            'usuario' => $usuario->load('vendedor'),
+        ]);
+    }
+
+    // Cambio sin pedir la contrasena actual, solo poco despues de entrar con una temporal.
+    // Pasado ese tiempo hay que usar cambiarPassword: una sesion olvidada abierta no debe
+    // bastar para quedarse con la cuenta.
+    public function restablecerPassword(RestablecerPasswordRequest $request, BitacoraService $bitacora): JsonResponse
+    {
+        $usuario = $request->user();
+
+        if (! $usuario->puedeCambiarPasswordSinLaActual()) {
+            return response()->json([
+                'message' => 'Se terminó el tiempo para cambiarla sin tu contraseña actual. Hazlo desde Mi cuenta, en Inicio de sesión y seguridad.',
+            ], 403);
         }
-        $tokens->delete();
 
-        return response()->json(['message' => 'Contraseña actualizada.']);
+        $this->guardarPassword($usuario, $request->password);
+        $bitacora->registrar(EventoBitacora::PasswordRestablecida, $request, $usuario);
+
+        return response()->json([
+            'message' => 'Contraseña actualizada.',
+            'usuario' => $usuario->load('vendedor'),
+        ]);
+    }
+
+    // Deja $password como la contrasena del usuario, anula cualquier temporal y cierra las
+    // demas sesiones. La sesion de esta peticion (si hay una) se conserva.
+    private function guardarPassword(Usuario $usuario, string $password, array $otrosCampos = []): void
+    {
+        DB::transaction(function () use ($usuario, $password, $otrosCampos) {
+            $usuario->forceFill([
+                'password' => $password, // el cast 'hashed' aplica bcrypt
+                'password_temporal' => null,
+                'password_temporal_vence' => null,
+                'cambio_password_hasta' => null,
+                ...$otrosCampos,
+            ]);
+            $usuario->setRememberToken(Str::random(60));
+            $usuario->save();
+
+            $tokens = $usuario->tokens();
+            $actual = $usuario->currentAccessToken();
+            if ($actual instanceof PersonalAccessToken) {
+                $tokens->whereKeyNot($actual->getKey());
+            }
+            $tokens->delete();
+        });
     }
 
 
-    public function sendResetLinkEmail(Request $request): JsonResponse
+    public function solicitarPasswordTemporal(Request $request, BitacoraService $bitacora): JsonResponse
     {
         $request->validate(['correo' => 'required|email']);
 
         $correo = Str::lower(trim($request->correo));
-        $respuesta = ['message' => 'Si el correo está registrado, recibirás tu nueva contraseña.'];
+        $respuesta = ['message' => 'Si el correo está registrado, recibirás una contraseña temporal.'];
 
         //permite una  solicitud por correo cada 60 segundos
         $key = 'olvide-password|'.$correo;
@@ -204,22 +255,24 @@ class AuthController extends Controller
             $usuario = Usuario::where('correo', $correo)->first();
 
             if ($usuario && $usuario->activo) {
-                $nueva = $this->generarPassword();
+                $temporal = $this->generarPassword();
+                $minutos = config('auth.password_temporal.vigencia_minutos');
 
-                //si el envío falla, se revierte el cambio y el usuario conserva su clave actual
-                DB::transaction(function () use ($usuario, $nueva) {
-                    $usuario->password = $nueva; //el cast 'hashed' aplica bcrypt
-                    $usuario->setRememberToken(Str::random(60));
-                    $usuario->save();
+                //la contraseña actual no se toca: conviven hasta que se use la temporal o venza.
+                //si el envío falla, se revierte y queda la temporal anterior (si había)
+                DB::transaction(function () use ($usuario, $temporal, $minutos) {
+                    $usuario->forceFill([
+                        'password_temporal' => Hash::make($temporal),
+                        'password_temporal_vence' => now()->addMinutes($minutos),
+                    ])->save();
 
-                    $usuario->tokens()->delete(); //cierra las demass seciones
-
-                    $usuario->notify(new PasswordNuevaNotification($nueva));
+                    $usuario->notify(new PasswordTemporalNotification($temporal, $minutos));
                 });
+
+                $bitacora->registrar(EventoBitacora::PasswordTemporalSolicitada, $request, $usuario);
             }
         } catch (\Throwable $e) {
-            //no se cambia la contrasena
-            Log::error('No se pudo enviar la nueva contraseña.', ['error' => $e->getMessage()]);
+            Log::error('No se pudo enviar la contraseña temporal.', ['error' => $e->getMessage()]);
         }
 
         //misma respuesta si existe o no la cuenta con ese correo
@@ -234,61 +287,5 @@ class AuthController extends Controller
         } while (! preg_match('/[A-Za-z]/', $password) || ! preg_match('/\d/', $password));
 
         return $password;
-    }
-
-
-    /* public function sendResetLinkEmail(Request $request): JsonResponse
-    {
-        $request->validate(['correo' => 'required|email']);
-
-        // Envia el correo con el enlace si la cuenta existe. El broker de Laravel guarda
-        // el token cifrado y no deja pedir otro para la misma cuenta antes de 60 s.
-        try {
-            Password::broker()->sendResetLink(['email' => Str::lower(trim($request->correo))]);
-        } catch (\Throwable $e) {
-            // Nunca se escriben en el log el token ni el enlace
-            Log::error('No se pudo enviar el correo de recuperación de contraseña.', ['error' => $e->getMessage()]);
-        }
-
-        // Misma respuesta exista o no la cuenta: asi no se revela que correos estan registrados.
-        // El enlace solo viaja por correo; jamas en esta respuesta.
-        return response()->json([
-            'message' => 'Si el correo está registrado, recibirás las instrucciones.',
-        ]);
-    } */
-    
-    public function reset(Request $request): JsonResponse
-    {
-        $request->validate([
-            'token' => 'required|string',
-            'correo' => 'required|email',
-            // Mismas reglas que al registrarse
-            'password' => ['required', 'string', 'confirmed', PasswordRule::min(8)->letters()->numbers()],
-        ]);
-
-        $response = Password::broker()->reset(
-            [
-                'email' => Str::lower(trim($request->correo)),
-                'password' => $request->password,
-                'password_confirmation' => $request->password_confirmation,
-                'token' => $request->token,
-            ],
-            function ($usuario, $password) {
-                $usuario->password = $password; // el cast 'hashed' aplica bcrypt
-                $usuario->setRememberToken(Str::random(60));
-                $usuario->save();
-
-                // Cierra todas las sesiones abiertas: si alguien mas tenia acceso, lo pierde
-                $usuario->tokens()->delete();
-
-                event(new PasswordReset($usuario));
-            }
-        );
-
-        if ($response === Password::PASSWORD_RESET) {
-            return response()->json(['message' => 'Contraseña restablecida con éxito.']);
-        }
-
-        return response()->json(['message' => 'El enlace de recuperación ha expirado o es inválido.'], 422);
     }
 }
