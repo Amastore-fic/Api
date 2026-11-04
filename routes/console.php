@@ -5,6 +5,7 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use MongoDB\BSON\UTCDateTime;
@@ -85,6 +86,37 @@ Artisan::command('redis:estado', function () {
         return 1;
     }
 })->purpose('Verifica la conexión con Redis');
+
+// Envia un correo de prueba con la configuracion actual.
+//   docker compose exec app php artisan correo:probar alguien@ejemplo.com
+Artisan::command('correo:probar {destino : Correo que recibe la prueba}', function () {
+    $mailer = config('mail.default');
+
+    $this->table(['Dato', 'Valor'], [
+        ['Forma de envío (MAIL_MAILER)', $mailer],
+        ['Servidor', config('mail.mailers.smtp.host').':'.config('mail.mailers.smtp.port')],
+        ['Remitente', config('mail.from.address')],
+    ]);
+
+    try {
+        Mail::raw('Si puedes leer esto, el envío de correos de la API funciona.', function ($mensaje) {
+            $mensaje->to($this->argument('destino'))->subject('Prueba de correo');
+        });
+
+        if ($mailer === 'log') {
+            $this->warn('MAIL_MAILER=log: el correo NO se envió, se escribió en storage/logs/laravel.log.');
+        } else {
+            $this->info('Correo entregado al servidor.');
+        }
+
+        return 0;
+    } catch (Throwable $e) {
+        $this->error('No se pudo enviar: '.$e->getMessage());
+        $this->line('Revisa las variables MAIL_* de tu .env. Con Gmail, MAIL_PASSWORD debe ser una contraseña de aplicación.');
+
+        return 1;
+    }
+})->purpose('Envía un correo de prueba');
 
 // Muestra los registros mas recientes de la bitacora (MongoDB).
 //   docker compose exec app php artisan bitacora:ver

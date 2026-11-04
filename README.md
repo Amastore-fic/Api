@@ -49,6 +49,20 @@ docker compose exec app php artisan bitacora:ver --evento=login_fallido --limite
 
 Las fechas se muestran en UTC.
 
+### Correos
+
+| Dónde | A dónde van |
+|---|---|
+| **Desarrollo** | A **Mailpit** (contenedor `comprasegura_mailpit`): los atrapa y se leen en `http://localhost:8025`. No le llegan a nadie, así que se puede probar con cualquier correo. |
+| **Producción** | A la cuenta de **Gmail** del proyecto, por SMTP (`smtp.gmail.com`, puerto 587). |
+| **Pruebas automáticas** | A ningún lado (`MAIL_MAILER=array`). |
+
+Para probar el envío: `docker compose exec app php artisan correo:probar alguien@ejemplo.com`.
+
+La contraseña de Gmail es una **contraseña de aplicación** (se crea en la cuenta de Google con la verificación en dos pasos activada) y va solo en el `.env`, nunca en el repositorio.
+
+**Cola:** el contenedor `comprasegura_queue` envía en segundo plano los correos que no deben hacer esperar al usuario (implementan `ShouldQueue`), como los de una compra. El de la **nueva contraseña no va por la cola**, por dos motivos: la contraseña quedaría legible en la tabla `jobs`, y si el envío falla hay que revertir el cambio para que el usuario conserve la suya.
+
 ## Requisitos
 
 - **Docker Desktop**, abierto y con el estado *Engine running*. No hace falta instalar PHP, PostgreSQL, MongoDB ni Redis.
@@ -109,6 +123,18 @@ docker compose exec app php artisan redis:estado
 
 Tu `.env` no necesita cambios: si no tiene las variables `MONGO_*` o `REDIS_*`, se usan las mismas de `.env.example`.
 
+### Si ya tenías el proyecto antes de que se agregaran los correos
+
+Ejecuta `docker compose up -d` para crear los contenedores `queue` y `mailpit`, y cambia en tu `.env` la línea `MAIL_MAILER=log` por estas tres:
+
+```
+MAIL_MAILER=smtp
+MAIL_HOST=mailpit
+MAIL_PORT=1025
+```
+
+Si no lo haces, todo sigue funcionando, pero los correos se siguen escribiendo en `storage/logs/laravel.log`.
+
 ## Uso diario
 
 | Qué | Comando |
@@ -121,6 +147,9 @@ Tu `.env` no necesita cambios: si no tiene las variables `MONGO_*` o `REDIS_*`, 
 | Verificar MongoDB | `docker compose exec app php artisan mongodb:estado` |
 | Verificar Redis | `docker compose exec app php artisan redis:estado` |
 | Vaciar la caché | `docker compose exec app php artisan cache:clear` |
+| Ver los correos de desarrollo | `http://localhost:8025` |
+| Enviar un correo de prueba | `docker compose exec app php artisan correo:probar alguien@ejemplo.com` |
+| Ver la cola | `docker compose logs -f queue` |
 | Ver la bitácora | `docker compose exec app php artisan bitacora:ver` |
 | Dependencias nuevas (si cambió `composer.lock`) | `docker compose exec app composer install` |
 | Reiniciar la base con datos de prueba (**borra todo**) | `docker compose exec app php artisan migrate:fresh --seed` |
