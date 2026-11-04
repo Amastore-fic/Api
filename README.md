@@ -61,7 +61,18 @@ Para probar el envío: `docker compose exec app php artisan correo:probar alguie
 
 La contraseña de Gmail es una **contraseña de aplicación** (se crea en la cuenta de Google con la verificación en dos pasos activada) y va solo en el `.env`, nunca en el repositorio.
 
-**Cola:** el contenedor `comprasegura_queue` envía en segundo plano los correos que no deben hacer esperar al usuario (implementan `ShouldQueue`), como los de una compra. El de la **nueva contraseña no va por la cola**, por dos motivos: la contraseña quedaría legible en la tabla `jobs`, y si el envío falla hay que revertir el cambio para que el usuario conserve la suya.
+**Cola:** el contenedor `comprasegura_queue` envía en segundo plano los correos que no deben hacer esperar al usuario (implementan `ShouldQueue`), como los de una compra. El de la **contraseña temporal no va por la cola**, por dos motivos: la contraseña quedaría legible en la tabla `jobs`, y si el envío falla hay que revertirla.
+
+### Recuperación de contraseña
+
+`POST /auth/forgot-password` envía por correo una **contraseña temporal**, que convive con la actual:
+
+- Sirve para entrar durante **10 minutos**; después deja de funcionar. Si se pide otra, solo vale la más reciente.
+- Si se entra con la contraseña actual, la temporal se anula.
+- Si se entra con la temporal, **reemplaza a la anterior** y se cierran las demás sesiones.
+- Durante los **30 minutos** siguientes se puede cambiar sin escribir la contraseña actual (`PUT /auth/password/restablecer`, pantalla `/restablecer-password`). El campo `cambio_password_hasta` del usuario indica hasta cuándo; mientras esté vigente, la web muestra el aviso. Después, el cambio se hace desde `/perfil/seguridad`, que sí pide la actual.
+
+Los tiempos se configuran en `config/auth.php` (`password_temporal`).
 
 ## Requisitos
 

@@ -7,13 +7,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Notifications\Messages\MailMessage;
-use Illuminate\Auth\Notifications\ResetPassword as ResetPasswordNotification;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\HasApiTokens;
 
-class Usuario extends Authenticatable implements CanResetPassword
+class Usuario extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
@@ -32,6 +30,8 @@ class Usuario extends Authenticatable implements CanResetPassword
     protected $hidden = [
         'password',
         'remember_token',
+        'password_temporal',
+        'password_temporal_vence',
     ];
 
     protected function casts(): array
@@ -39,6 +39,8 @@ class Usuario extends Authenticatable implements CanResetPassword
         return [
             'password' => 'hashed',
             'activo' => 'boolean',
+            'password_temporal_vence' => 'datetime',
+            'cambio_password_hasta' => 'datetime',
             'rol' => RolUsuario::class,
         ];
     }
@@ -46,6 +48,19 @@ class Usuario extends Authenticatable implements CanResetPassword
     public function tieneRol(RolUsuario ...$roles): bool
     {
         return in_array($this->rol, $roles, true);
+    }
+
+    // Contrasena que llego por correo: sirve para entrar solo mientras no venza
+    public function passwordTemporalValida(string $password): bool
+    {
+        return $this->password_temporal
+            && $this->password_temporal_vence?->isFuture()
+            && Hash::check($password, $this->password_temporal);
+    }
+
+    public function puedeCambiarPasswordSinLaActual(): bool
+    {
+        return (bool) $this->cambio_password_hasta?->isFuture();
     }
 
     public function vendedor(): HasOne
@@ -73,47 +88,10 @@ class Usuario extends Authenticatable implements CanResetPassword
         return $this->hasMany(Calificacion::class, 'id_cliente');
     }
 
-    public function getEmailForPasswordReset()
-    {
-        return $this->correo;
-    }
-
     // Direccion a la que se envian los correos (Laravel busca "email" y aqui es "correo").
     // Sin esto el correo de recuperacion nunca se enviaba: la direccion quedaba vacia.
     public function routeNotificationForMail(): string
     {
         return $this->correo;
-    }
-
-    public function sendPasswordResetNotification($token)
-    {
-        $this->notify(new class($token) extends ResetPasswordNotification {
-            public $token;
-
-            public function __construct($token)
-            {
-                $this->token = $token;
-            }
-
-            public function toMail($notifiable)
-            {
-                $url = rtrim(config('app.frontend_url'), '/')
-                    .'/restablecer-password?token='.urlencode($this->token)
-                    .'&correo='.urlencode($notifiable->correo);
-                $minutos = config('auth.passwords.users.expire');
-
-                return (new MailMessage)
-                    ->subject('Restablecer contraseña')
-                    ->line('Estás recibiendo este correo porque solicitaste un restablecimiento de contraseña para tu cuenta.')
-                    ->action('Restablecer contraseña', $url)
-                    ->line("El enlace vence en {$minutos} minutos y solo funciona una vez.")
-                    ->line('Si no solicitaste esto, puedes ignorar este mensaje: tu contraseña no cambiará.');
-            }
-        });
-    }
-
-    public function findForPasswordReset($credentials)
-    {
-        return $this->where('correo', $credentials['email'])->first();
     }
 }
