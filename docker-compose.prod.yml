@@ -23,6 +23,13 @@ x-app-env: &app-env
   CACHE_STORE: failover
   SESSION_DRIVER: database
   QUEUE_CONNECTION: database
+  MAIL_MAILER: smtp
+  MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+  MAIL_PORT: ${MAIL_PORT:-587}
+  MAIL_USERNAME: ${MAIL_USERNAME:?Falta MAIL_USERNAME en .env}
+  MAIL_PASSWORD: ${MAIL_PASSWORD:?Falta MAIL_PASSWORD en .env}
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:?Falta MAIL_FROM_ADDRESS en .env}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME:-${APP_NAME}}
   SANCTUM_EXPIRATION: ${SANCTUM_EXPIRATION}
   PASARELA_PAGO: ${PASARELA_PAGO}
   PASARELA_SIMULADA_LIMITE_RECHAZO: ${PASARELA_SIMULADA_LIMITE_RECHAZO}
@@ -39,6 +46,30 @@ services:
     working_dir: /var/www/html
     volumes:
       - app-public:/var/www/html/public
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - comprasegura_net
+
+  # Atiende la cola. Se reinicia cada hora para liberar memoria
+  queue:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: production
+    image: comprasegura/app:prod
+    container_name: comprasegura_queue
+    restart: unless-stopped
+    user: www-data
+    working_dir: /var/www/html
+    command: ["php", "artisan", "queue:work", "--tries=3", "--backoff=60", "--max-time=3600"]
     environment:
       <<: *app-env
     depends_on:
