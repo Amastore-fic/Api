@@ -25,9 +25,12 @@ class Carrito extends Model
     }
 
     // El total siempre lo calcula el servidor; los clientes solo lo muestran.
+    // No cuenta lo que ya no se puede comprar (producto retirado o vendedor bloqueado).
     public function total(): string
     {
-        $total = $this->items->sum(fn (CarritoItem $item) => $item->cantidad * $item->producto->precio);
+        $total = $this->items
+            ->filter(fn (CarritoItem $item) => $item->producto->disponibleParaComprar())
+            ->sum(fn (CarritoItem $item) => $item->cantidad * $item->producto->precio);
 
         return number_format($total, 2, '.', '');
     }

@@ -213,9 +213,24 @@ docker/                  Dockerfile PHP-FPM (dev con Xdebug / prod) y Nginx
 
 ## Estado de los endpoints
 
-Listos: registro de cliente y vendedor, login, logout, perfil, catalogo (listado con búsqueda y filtro por categoría, ficha, categorías), direcciones, alta de categorías.
+Listos: registro de cliente y vendedor, login, logout, perfil, catalogo (listado con búsqueda y filtro por categoría, ficha, categorías), direcciones, carrito, alta de categorías.
 
-Pendientes (responden `501` con un `TODO` que describe la regla de negocio del MVP): carrito, pedidos, pago, calificaciones, gestión de productos del vendedor y el resto de administración.
+Pendientes (responden `501` con un `TODO` que describe la regla de negocio del MVP): pedidos, pago, calificaciones, gestión de productos del vendedor y el resto de administración.
+
+### Carrito
+
+Todas las rutas responden el carrito completo: `{ id, items, total, cantidad_articulos }`. Cada línea trae `id`, `id_producto`, `cantidad`, `subtotal`, `disponible` y los datos del `producto`.
+
+| Ruta | Qué hace |
+|---|---|
+| `GET /carrito` | Devuelve el carrito del cliente (lo crea vacío si no tiene) |
+| `POST /carrito/items` | `{ id_producto, cantidad }` (cantidad opcional, 1 por defecto). Si el producto ya está, suma las piezas |
+| `PUT /carrito/items/{id}` | `{ cantidad }`: cambia la cantidad de una línea |
+| `DELETE /carrito/items/{id}` | Quita una línea |
+
+- Precios, subtotales y total los calcula el servidor; lo que mande el cliente como precio se ignora.
+- No deja pasar de las existencias (422 en `cantidad`) ni agregar productos retirados o de vendedores bloqueados (422 en `id_producto`).
+- Si un producto se retira o su vendedor es bloqueado después de agregarlo, la línea sigue apareciendo con `disponible: false` y no cuenta en el total.
 
 ## Reglas que no hay que perder de vista
 
