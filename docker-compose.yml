@@ -15,6 +15,8 @@ x-app-env: &app-env
   REDIS_HOST: redis
   REDIS_PORT: 6379
   CACHE_STORE: failover
+  # Cola: la atiende el contenedor "queue"
+  QUEUE_CONNECTION: database
 
 services:
   app:
@@ -31,6 +33,35 @@ services:
       - vendor-data:/var/www/html/vendor
     environment:
       <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - comprasegura_net
+
+  # Atiende la cola: envia en segundo plano lo que no debe hacer esperar al usuario.
+  # "listen" (no "work") para que tome los cambios del codigo sin reiniciarlo
+  queue:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: development
+    image: comprasegura/app:dev
+    container_name: comprasegura_queue
+    restart: unless-stopped
+    working_dir: /var/www/html
+    command: ["php", "artisan", "queue:listen", "--tries=3", "--backoff=60"]
+    volumes:
+      - .:/var/www/html:cached
+      - vendor-data:/var/www/html/vendor
+    environment:
+      <<: *app-env
+      # Sin Xdebug: cada vuelta de "listen" llenaria el log de avisos
+      XDEBUG_MODE: "off"
     depends_on:
       db:
         condition: service_healthy
@@ -112,6 +143,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - comprasegura_net
+
+  # Atrapa los correos de desarrollo: no salen a internet y se leen en http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1
+    container_name: comprasegura_mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_FORWARD_PORT:-8025}:8025"
     networks:
       - comprasegura_net
 

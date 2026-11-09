@@ -92,6 +92,14 @@ return [
     |
     */
 
+    // Recuperacion de contrasena con una contrasena temporal enviada por correo
+    'password_temporal' => [
+        // Minutos para entrar con ella; despues deja de servir
+        'vigencia_minutos' => 10,
+        // Minutos, ya dentro, para cambiarla sin escribir la contrasena actual
+        'cambio_directo_minutos' => 30,
+    ],
+
     'passwords' => [
         'users' => [
             'provider' => 'users',

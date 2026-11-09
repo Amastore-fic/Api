@@ -12,5 +12,8 @@ enum EventoBitacora: string
     case UsuarioBloqueado = 'usuario_bloqueado'; //un administrador bloqueo una cuenta
     case UsuarioDesbloqueado = 'usuario_desbloqueado'; //un administrador desbloqueo una cuenta
     case Logout = 'logout';
+    case PasswordTemporalSolicitada = 'password_temporal_solicitada'; //se envio una contrasena temporal por correo
+    case LoginPasswordTemporal = 'login_password_temporal'; //entro con la temporal y reemplazo a la anterior
+    case PasswordRestablecida = 'password_restablecida'; //la cambio sin la actual, despues de entrar con la temporal
 
 }

@@ -49,6 +49,31 @@ docker compose exec app php artisan bitacora:ver --evento=login_fallido --limite
 
 Las fechas se muestran en UTC.
 
+### Correos
+
+| Dónde | A dónde van |
+|---|---|
+| **Desarrollo** | A **Mailpit** (contenedor `comprasegura_mailpit`): los atrapa y se leen en `http://localhost:8025`. No le llegan a nadie, así que se puede probar con cualquier correo. |
+| **Producción** | A la cuenta de **Gmail** del proyecto, por SMTP (`smtp.gmail.com`, puerto 587). |
+| **Pruebas automáticas** | A ningún lado (`MAIL_MAILER=array`). |
+
+Para probar el envío: `docker compose exec app php artisan correo:probar alguien@ejemplo.com`.
+
+La contraseña de Gmail es una **contraseña de aplicación** (se crea en la cuenta de Google con la verificación en dos pasos activada) y va solo en el `.env`, nunca en el repositorio.
+
+**Cola:** el contenedor `comprasegura_queue` envía en segundo plano los correos que no deben hacer esperar al usuario (implementan `ShouldQueue`), como los de una compra. El de la **contraseña temporal no va por la cola**, por dos motivos: la contraseña quedaría legible en la tabla `jobs`, y si el envío falla hay que revertirla.
+
+### Recuperación de contraseña
+
+`POST /auth/forgot-password` envía por correo una **contraseña temporal**, que convive con la actual:
+
+- Sirve para entrar durante **10 minutos**; después deja de funcionar. Si se pide otra, solo vale la más reciente.
+- Si se entra con la contraseña actual, la temporal se anula.
+- Si se entra con la temporal, **reemplaza a la anterior** y se cierran las demás sesiones.
+- Durante los **30 minutos** siguientes se puede cambiar sin escribir la contraseña actual (`PUT /auth/password/restablecer`, pantalla `/restablecer-password`). El campo `cambio_password_hasta` del usuario indica hasta cuándo; mientras esté vigente, la web muestra el aviso. Después, el cambio se hace desde `/perfil/seguridad`, que sí pide la actual.
+
+Los tiempos se configuran en `config/auth.php` (`password_temporal`).
+
 ## Requisitos
 
 - **Docker Desktop**, abierto y con el estado *Engine running*. No hace falta instalar PHP, PostgreSQL, MongoDB ni Redis.
@@ -109,6 +134,18 @@ docker compose exec app php artisan redis:estado
 
 Tu `.env` no necesita cambios: si no tiene las variables `MONGO_*` o `REDIS_*`, se usan las mismas de `.env.example`.
 
+### Si ya tenías el proyecto antes de que se agregaran los correos
+
+Ejecuta `docker compose up -d` para crear los contenedores `queue` y `mailpit`, y cambia en tu `.env` la línea `MAIL_MAILER=log` por estas tres:
+
+```
+MAIL_MAILER=smtp
+MAIL_HOST=mailpit
+MAIL_PORT=1025
+```
+
+Si no lo haces, todo sigue funcionando, pero los correos se siguen escribiendo en `storage/logs/laravel.log`.
+
 ## Uso diario
 
 | Qué | Comando |
@@ -121,6 +158,9 @@ Tu `.env` no necesita cambios: si no tiene las variables `MONGO_*` o `REDIS_*`, 
 | Verificar MongoDB | `docker compose exec app php artisan mongodb:estado` |
 | Verificar Redis | `docker compose exec app php artisan redis:estado` |
 | Vaciar la caché | `docker compose exec app php artisan cache:clear` |
+| Ver los correos de desarrollo | `http://localhost:8025` |
+| Enviar un correo de prueba | `docker compose exec app php artisan correo:probar alguien@ejemplo.com` |
+| Ver la cola | `docker compose logs -f queue` |
 | Ver la bitácora | `docker compose exec app php artisan bitacora:ver` |
 | Dependencias nuevas (si cambió `composer.lock`) | `docker compose exec app composer install` |
 | Reiniciar la base con datos de prueba (**borra todo**) | `docker compose exec app php artisan migrate:fresh --seed` |
@@ -173,9 +213,24 @@ docker/                  Dockerfile PHP-FPM (dev con Xdebug / prod) y Nginx
 
 ## Estado de los endpoints
 
-Listos: registro de cliente y vendedor, login, logout, perfil, catalogo (listado con búsqueda y filtro por categoría, ficha, categorías), direcciones, alta de categorías.
+Listos: registro de cliente y vendedor, login, logout, perfil, catalogo (listado con búsqueda y filtro por categoría, ficha, categorías), direcciones, carrito, alta de categorías.
 
-Pendientes (responden `501` con un `TODO` que describe la regla de negocio del MVP): carrito, pedidos, pago, calificaciones, gestión de productos del vendedor y el resto de administración.
+Pendientes (responden `501` con un `TODO` que describe la regla de negocio del MVP): pedidos, pago, calificaciones, gestión de productos del vendedor y el resto de administración.
+
+### Carrito
+
+Todas las rutas responden el carrito completo: `{ id, items, total, cantidad_articulos }`. Cada línea trae `id`, `id_producto`, `cantidad`, `subtotal`, `disponible` y los datos del `producto`.
+
+| Ruta | Qué hace |
+|---|---|
+| `GET /carrito` | Devuelve el carrito del cliente (lo crea vacío si no tiene) |
+| `POST /carrito/items` | `{ id_producto, cantidad }` (cantidad opcional, 1 por defecto). Si el producto ya está, suma las piezas |
+| `PUT /carrito/items/{id}` | `{ cantidad }`: cambia la cantidad de una línea |
+| `DELETE /carrito/items/{id}` | Quita una línea |
+
+- Precios, subtotales y total los calcula el servidor; lo que mande el cliente como precio se ignora.
+- No deja pasar de las existencias (422 en `cantidad`) ni agregar productos retirados o de vendedores bloqueados (422 en `id_producto`).
+- Si un producto se retira o su vendedor es bloqueado después de agregarlo, la línea sigue apareciendo con `disponible: false` y no cuenta en el total.
 
 ## Reglas que no hay que perder de vista
 

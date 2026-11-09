@@ -74,6 +74,12 @@ class Producto extends Model
         return $this->hasMany(Calificacion::class, 'id_producto');
     }
 
+    // Misma regla que scopeVisibles, para un producto ya cargado (con vendedor.usuario)
+    public function disponibleParaComprar(): bool
+    {
+        return $this->estado === EstadoProducto::Activo && (bool) $this->vendedor?->usuario?->activo;
+    }
+
     //productos activos de vendedor que no esta bloqueado (los que ven los  clientes)
     public function scopeVisibles(Builder $query): Builder
     {

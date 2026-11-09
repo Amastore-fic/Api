@@ -23,15 +23,14 @@ Route::prefix('auth')->group(function () {
     Route::post('registro-vendedor', [AuthController::class, 'registroVendedor']);
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
-    // ---- Nuevas rutas de recuperación de contraseña ----
-    Route::post('forgot-password', [AuthController::class, 'sendResetLinkEmail'])->middleware('throttle:5,1');
-    Route::post('reset-password', [AuthController::class, 'reset'])->middleware('throttle:5,1');
+    Route::post('forgot-password', [AuthController::class, 'solicitarPasswordTemporal'])->middleware('throttle:5,1');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('perfil', [AuthController::class, 'perfil']);
         Route::put('perfil', [AuthController::class, 'actualizarPerfil']);
         Route::put('password', [AuthController::class, 'cambiarPassword']);
+        Route::put('password/restablecer', [AuthController::class, 'restablecerPassword'])->middleware('throttle:5,1');
     });
 });
 
