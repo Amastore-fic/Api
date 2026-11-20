@@ -1,6 +1,8 @@
 <?php
 
+use App\Enums\RolUsuario;
 use App\Models\EventoBitacora;
+use App\Models\Usuario;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -117,6 +119,39 @@ Artisan::command('correo:probar {destino : Correo que recibe la prueba}', functi
         return 1;
     }
 })->purpose('Envía un correo de prueba');
+
+// Convierte una cuenta existente en superadmin. Es la unica forma de crear uno.
+//   docker compose exec app php artisan usuarios:superadmin alguien@ejemplo.com
+Artisan::command('usuarios:superadmin {correo : Correo de una cuenta que ya existe}', function () {
+    $usuario = Usuario::where('correo', Str::lower(trim($this->argument('correo'))))->first();
+
+    if (! $usuario) {
+        $this->error('No hay ninguna cuenta con ese correo. Primero hay que registrarla.');
+
+        return 1;
+    }
+
+    if ($usuario->rol === RolUsuario::Superadmin) {
+        $this->info("{$usuario->correo} ya es superadministrador.");
+
+        return 0;
+    }
+
+    if ($usuario->rol === RolUsuario::Vendedor) {
+        $this->error('Es una cuenta de vendedor: perderia acceso a su negocio. Usa otra cuenta.');
+
+        return 1;
+    }
+
+    $anterior = $usuario->rol->value;
+    $usuario->forceFill(['rol' => RolUsuario::Superadmin, 'activo' => true])->save();
+    // Las sesiones abiertas guardan el rol anterior: se cierran para que vuelva a entrar
+    $usuario->tokens()->delete();
+
+    $this->info("{$usuario->correo} ahora es superadministrador (antes: {$anterior}). Debe volver a iniciar sesión.");
+
+    return 0;
+})->purpose('Convierte una cuenta existente en superadministrador');
 
 // Muestra los registros mas recientes de la bitacora (MongoDB).
 //   docker compose exec app php artisan bitacora:ver

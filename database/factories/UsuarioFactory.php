@@ -36,6 +36,11 @@ class UsuarioFactory extends Factory
         return $this->state(fn () => ['rol' => RolUsuario::Administrador]);
     }
 
+    public function superadmin(): static
+    {
+        return $this->state(fn () => ['rol' => RolUsuario::Superadmin]);
+    }
+
     public function bloqueado(): static
     {
         return $this->state(fn () => ['activo' => false]);

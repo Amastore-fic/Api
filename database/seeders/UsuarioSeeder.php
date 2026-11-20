@@ -13,6 +13,14 @@ class UsuarioSeeder extends Seeder
     public function run(): void
     {
         Usuario::create([
+            'nombre' => 'Super',
+            'apellido' => 'Admin',
+            'correo' => 'superadmin@comprasegura.test',
+            'password' => 'password123',
+            'rol' => RolUsuario::Superadmin,
+        ]);
+
+        Usuario::create([
             'nombre' => 'Admin',
             'apellido' => 'Sistema',
             'correo' => 'admin@comprasegura.test',
