@@ -82,8 +82,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('rol:administrador')->prefix('admin')->group(function () {
         Route::get('usuarios', [AdminUsuarioController::class, 'index']);
         Route::patch('usuarios/{id}/estado', [AdminUsuarioController::class, 'cambiarEstado'])->whereNumber('id');
+
+        Route::get('productos', [AdminProductoController::class, 'index']);
+        Route::patch('productos/{id}/estado', [AdminProductoController::class, 'cambiarEstado'])->whereNumber('id');
+        Route::delete('productos/{id}', [AdminProductoController::class, 'destroy'])->whereNumber('id');
+
         Route::get('pedidos', [AdminPedidoController::class, 'index']);
         Route::post('categorias', [AdminCategoriaController::class, 'store']);
-        Route::delete('productos/{id}', [AdminProductoController::class, 'destroy'])->whereNumber('id');
     });
 });
