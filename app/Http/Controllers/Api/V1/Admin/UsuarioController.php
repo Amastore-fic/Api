@@ -54,8 +54,14 @@ class UsuarioController extends Controller
             return response()->json(['message' => 'No puedes bloquear tu propia cuenta.'], 422);
         }
 
-        if ($usuario->rol === RolUsuario::Administrador) {
-            return response()->json(['message' => 'No se puede bloquear a otro administrador.'], 422);
+        // Nadie bloquea a un superadmin desde la API: si se pudiera, podrian quedar
+        // todos bloqueados y sin nadie que los desbloquee
+        if ($usuario->rol === RolUsuario::Superadmin) {
+            return response()->json(['message' => 'No se puede bloquear a un superadministrador.'], 422);
+        }
+
+        if ($usuario->rol === RolUsuario::Administrador && $request->user()->rol !== RolUsuario::Superadmin) {
+            return response()->json(['message' => 'Solo un superadministrador puede bloquear a un administrador.'], 422);
         }
 
         $usuario->activo = $request->boolean('activo');

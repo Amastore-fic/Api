@@ -12,7 +12,7 @@ class PedidoPolicy
     public function view(Usuario $usuario, Pedido $pedido): bool
     {
         return match ($usuario->rol) {
-            RolUsuario::Administrador => true,
+            RolUsuario::Administrador, RolUsuario::Superadmin => true,
             RolUsuario::Cliente => $pedido->id_cliente === $usuario->id,
             RolUsuario::Vendedor => $pedido->id_vendedor === $usuario->vendedor?->id,
         };

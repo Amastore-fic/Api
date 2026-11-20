@@ -45,8 +45,13 @@ class Usuario extends Authenticatable
         ];
     }
 
+    // El superadmin cuenta como administrador en cualquier ruta o regla que lo pida
     public function tieneRol(RolUsuario ...$roles): bool
     {
+        if ($this->rol === RolUsuario::Superadmin && in_array(RolUsuario::Administrador, $roles, true)) {
+            return true;
+        }
+
         return in_array($this->rol, $roles, true);
     }
 

@@ -162,6 +162,7 @@ Si no lo haces, todo sigue funcionando, pero los correos se siguen escribiendo e
 | Enviar un correo de prueba | `docker compose exec app php artisan correo:probar alguien@ejemplo.com` |
 | Ver la cola | `docker compose logs -f queue` |
 | Ver la bitácora | `docker compose exec app php artisan bitacora:ver` |
+| Convertir una cuenta en superadministrador | `docker compose exec app php artisan usuarios:superadmin correo@ejemplo.com` |
 | Dependencias nuevas (si cambió `composer.lock`) | `docker compose exec app composer install` |
 | Reiniciar la base con datos de prueba (**borra todo**) | `docker compose exec app php artisan migrate:fresh --seed` |
 
@@ -176,9 +177,12 @@ Usuarios de prueba (contraseña `password123`):
 
 | Rol | Correo |
 |---|---|
+| Superadministrador | `superadmin@comprasegura.test` |
 | Administrador | `admin@comprasegura.test` |
 | Vendedor | `vendedor1@comprasegura.test`, `vendedor2@comprasegura.test` |
 | Cliente | `cliente@comprasegura.test` |
+
+**Superadministrador:** puede hacer todo lo que hace un administrador y, además, bloquear y desbloquear administradores. A un superadministrador no lo puede bloquear nadie desde la API. No se registra: se convierte una cuenta existente con `docker compose exec app php artisan usuarios:superadmin correo@ejemplo.com` (también en producción, con `-f docker-compose.prod.yml`). Los usuarios de prueba de arriba solo existen después de `migrate --seed` o `migrate:fresh --seed`.
 
 ## Pruebas
 
